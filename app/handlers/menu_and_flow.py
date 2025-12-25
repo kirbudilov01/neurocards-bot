@@ -331,16 +331,3 @@ async def cancel(cb: CallbackQuery, state: FSMContext):
     await state.clear()
     await show_menu(cb.message, MENU_TEXT, kb_menu())
 
-
-# ===== DEBUG (временно). Смотри логи Render, чтобы понять что прилетает и какой state =====
-@router.message()
-async def _debug_any_message(message: Message, state: FSMContext):
-    st = await state.get_state()
-    kinds = []
-    if message.photo:
-        kinds.append("photo")
-    if message.document:
-        kinds.append(f"document({message.document.mime_type})")
-    if message.text:
-        kinds.append("text")
-    print("DEBUG_ANY:", {"state": st, "kinds": kinds})
