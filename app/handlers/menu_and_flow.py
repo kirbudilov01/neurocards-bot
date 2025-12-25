@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, FSInputFile
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 
@@ -13,18 +13,26 @@ from app.keyboards import (
 from app.db import get_or_create_user, supabase
 from app.services.generation import start_generation
 
-from aiogram.types import FSInputFile
-
-MENU_PHOTO_PATH = "assets/menu.jpg"
-
-async def show_menu(message, text, reply_markup):
-    await message.answer_photo(
-        FSInputFile(MENU_PHOTO_PATH),
-        caption=text,
-        reply_markup=reply_markup
-    )
-    
 router = Router()
+
+PARSE_MODE = "HTML"
+MENU_PHOTO_PATH = "assets/menu.jpg"
+MENU_TEXT = getattr(texts, "MENU", "Выберите действие 👇")
+
+
+# ---------- MENU RENDER ----------
+async def show_menu(message, text, reply_markup):
+    try:
+        await message.answer_photo(
+            FSInputFile(MENU_PHOTO_PATH),
+            caption=text,
+            reply_markup=reply_markup,
+            parse_mode=PARSE_MODE,
+        )
+    except Exception:
+        # если файла нет / путь неверный — не роняем бота
+        await message.answer(text, reply_markup=reply_markup, parse_mode=PARSE_MODE)
+
 
 # ---------- HELPERS ----------
 def _get_balance(tg_user_id: int) -> int:
@@ -41,6 +49,7 @@ def _get_balance(tg_user_id: int) -> int:
     )
     if not res.data:
         return 0
+
     row = res.data[0] or {}
     if row.get("balance") is not None:
         return int(row.get("balance") or 0)
@@ -78,6 +87,7 @@ async def again(cb: CallbackQuery, state: FSMContext):
     await state.clear()
     await show_menu(cb.message, MENU_TEXT, kb_menu())
 
+
 # ---------- CABINET ----------
 @router.callback_query(F.data == "cabinet")
 async def cabinet(cb: CallbackQuery):
@@ -85,20 +95,27 @@ async def cabinet(cb: CallbackQuery):
     get_or_create_user(cb.from_user.id, cb.from_user.username)
     bal = _get_balance(cb.from_user.id)
 
-    cabinet_tpl = getattr(texts, "CABINET", "👤 Личный кабинет\nБаланс: {credits}\n\nВыбери действие:")
+    cabinet_tpl = getattr(
+        texts,
+        "CABINET",
+        "👤 <b>Личный кабинет</b>\n\n💳 Баланс: <b>{credits}</b>\n\nВыбери действие:",
+    )
+
     await cb.message.answer(
-    f"👤 *Личный кабинет*\n\n"
-    f"💳 *Баланс:* {bal} кредит(ов)\n\n"
-    "Каждая генерация стоит 1 кредит.\n"
-    "Пополнение и бонусы — скоро 🚀",
-    reply_markup=kb_cabinet(),
-    parse_mode="Markdown"
-)
+        cabinet_tpl.format(credits=bal),
+        reply_markup=kb_cabinet(),
+        parse_mode=PARSE_MODE,
+    )
+
 
 @router.callback_query(F.data == "ref_soon")
 async def ref_soon(cb: CallbackQuery):
     await cb.answer()
-    await cb.message.answer("🤝 Реферальная система будет чуть позже 🙂", reply_markup=kb_cabinet())
+    await cb.message.answer(
+        "🤝 Реферальная система будет чуть позже 🙂",
+        reply_markup=kb_cabinet(),
+        parse_mode=PARSE_MODE,
+    )
 
 
 # ---------- START REELS ----------
@@ -112,6 +129,7 @@ async def make_reels(cb: CallbackQuery, state: FSMContext):
     await cb.message.answer(
         getattr(texts, "ASK_PHOTO", "Пришли фото товара (без людей в кадре)."),
         reply_markup=kb_back_to_menu(),
+        parse_mode=PARSE_MODE,
     )
 
 
@@ -126,6 +144,7 @@ async def make_neurocard(cb: CallbackQuery, state: FSMContext):
     await cb.message.answer(
         getattr(texts, "ASK_PHOTO", "Пришли фото товара (без людей в кадре)."),
         reply_markup=kb_back_to_menu(),
+        parse_mode=PARSE_MODE,
     )
 
 
@@ -137,18 +156,18 @@ async def on_photo(message: Message, state: FSMContext):
     await state.set_state(GenFlow.waiting_product)
 
     await message.answer(
-    "✍️ *Напиши информацию о товаре одним сообщением*\n\n"
-    "Можешь просто скопировать описание со страницы маркетплейса.\n"
-    "Чем больше деталей — тем лучше результат 🚀",
-    reply_markup=kb_back_to_menu(),
-    parse_mode="Markdown"
-)
+        getattr(texts, "ASK_PRODUCT_INFO", "Напиши информацию о товаре одним сообщением."),
+        reply_markup=kb_back_to_menu(),
+        parse_mode=PARSE_MODE,
+    )
+
 
 @router.message(GenFlow.waiting_photo)
 async def on_photo_wrong(message: Message):
     await message.answer(
         "Нужно именно фото товара (картинка). Пришли фото, пожалуйста 🙂",
         reply_markup=kb_back_to_menu(),
+        parse_mode=PARSE_MODE,
     )
 
 
@@ -159,19 +178,19 @@ async def on_product_info(message: Message, state: FSMContext):
     await state.set_state(GenFlow.waiting_wishes)
 
     await message.answer(
-    "✨ *Есть ли доп. пожелания?*\n\n"
-    "Например:\n"
-    "— внешность человека\n"
-    "— стиль видео\n"
-    "— настроение\n\n"
-    "Если пожеланий нет — отправь «-»",
-    reply_markup=kb_back_to_menu(),
-    parse_mode="Markdown"
-)
+        getattr(texts, "ASK_WISHES", "Есть ли пожелания? Если нет — отправь «-»."),
+        reply_markup=kb_back_to_menu(),
+        parse_mode=PARSE_MODE,
+    )
+
 
 @router.message(GenFlow.waiting_product)
 async def on_product_wrong(message: Message):
-    await message.answer("Напиши текстом описание товара 🙂", reply_markup=kb_back_to_menu())
+    await message.answer(
+        "Напиши текстом описание товара 🙂",
+        reply_markup=kb_back_to_menu(),
+        parse_mode=PARSE_MODE,
+    )
 
 
 # ---------- WISHES ----------
@@ -185,11 +204,12 @@ async def on_wishes(message: Message, state: FSMContext):
     confirm_tpl = getattr(
         texts,
         "CONFIRM_COST",
-        "Генерация стоит 1 кредит.\nТекущий баланс: {credits}\n\nЗапускаем?",
+        "Генерация стоит <b>1 кредит</b>.\nТекущий баланс: <b>{credits}</b>\n\nЗапускаем?",
     )
     await message.answer(
         confirm_tpl.format(credits=credits),
         reply_markup=kb_confirm(),
+        parse_mode=PARSE_MODE,
     )
 
 
@@ -207,16 +227,14 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
     template_id = data.get("template_id", "template_1")
 
     if not photo_file_id or not product_text:
-        await cb.message.answer("⚠️ Данных не хватает. Начни заново из меню.", reply_markup=kb_back_to_menu())
+        await cb.message.answer(
+            "⚠️ Данных не хватает. Начни заново из меню.",
+            reply_markup=kb_back_to_menu(),
+            parse_mode=PARSE_MODE,
+        )
         await state.clear()
         return
 
-    # start_generation сам:
-    # - скачает фото
-    # - загрузит в storage
-    # - создаст job
-    # - спишет кредит
-    # - отправит пользователю 1 сообщение "генерация запущена" + кнопки
     await start_generation(
         bot=cb.bot,
         tg_user_id=cb.from_user.id,
@@ -234,4 +252,4 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
 async def cancel(cb: CallbackQuery, state: FSMContext):
     await cb.answer("Ок")
     await state.clear()
-    await cb.message.answer(getattr(texts, "MENU", "Выберите действие 👇"), reply_markup=kb_menu())
+    await show_menu(cb.message, MENU_TEXT, kb_menu())
