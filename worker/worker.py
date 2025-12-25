@@ -53,31 +53,78 @@ def get_user_by_id(user_id: str):
     return res.data[0] if res.data else None
 
 
+def normalize_storage_path(input_path: str) -> str:
+    """
+    Делаем путь ОТНОСИТЕЛЬНЫМ внутри bucket 'inputs':
+    - было: 'inputs/523/...jpg' -> станет '523/...jpg'
+    - было: '/inputs/523/...jpg' -> станет '523/...jpg'
+    - было: '523/...jpg' -> остаётся так
+    """
+    p = (input_path or "").strip().lstrip("/")
+    if p.startswith("inputs/"):
+        p = p[len("inputs/"):]
+    return p
+
+
 def get_public_input_url(input_path: str) -> str:
-    pub = supabase.storage.from_("inputs").get_public_url(input_path)
+    rel = normalize_storage_path(input_path)
+
+    pub = supabase.storage.from_("inputs").get_public_url(rel)
     if isinstance(pub, dict):
         return pub.get("publicUrl") or pub.get("public_url") or str(pub)
     return str(pub)
 
 
-def find_first_mp4_url(obj):
-    url_re = re.compile(r"https?://[^\s\"']+\.mp4(\?[^\s\"']+)?", re.IGNORECASE)
+def find_video_url(obj):
+    """
+    Универсально ищет ссылку на видео (mp4/mov/webm/m3u8) или типичные url-поля.
+    """
+    common_keys = {
+        "video", "video_url", "videoUrl", "output_url", "outputUrl",
+        "url", "download_url", "downloadUrl", "file_url", "fileUrl",
+        "result_url", "resultUrl", "play_url", "playUrl"
+    }
 
     if obj is None:
         return None
-    if isinstance(obj, str):
-        m = url_re.search(obj)
-        return m.group(0) if m else None
+
     if isinstance(obj, dict):
+        # сначала по ключам
+        for k, v in obj.items():
+            if k in common_keys and isinstance(v, str) and v.startswith("http"):
+                return v
+        # потом глубже
         for v in obj.values():
-            found = find_first_mp4_url(v)
-            if found:
-                return found
+            got = find_video_url(v)
+            if got:
+                return got
+
     if isinstance(obj, list):
         for it in obj:
-            found = find_first_mp4_url(it)
-            if found:
-                return found
+            got = find_video_url(it)
+            if got:
+                return got
+
+    if isinstance(obj, str):
+        m = re.search(r"https?://[^\s\"']+\.(mp4|mov|webm|m3u8)(\?[^\s\"']+)?", obj, re.I)
+        if m:
+            return m.group(0)
+
+    return None
+
+
+def extract_fail_message(info: dict) -> str | None:
+    """
+    Достаём failMsg если KIE вернул fail.
+    """
+    try:
+        data = info.get("data") if isinstance(info, dict) else None
+        if isinstance(data, dict):
+            state = (data.get("state") or data.get("status") or "").lower()
+            if state == "fail" or state == "failed":
+                return data.get("failMsg") or data.get("message") or "KIE failed"
+    except Exception:
+        pass
     return None
 
 
@@ -118,6 +165,10 @@ async def main():
 
             image_url = get_public_input_url(input_path)
 
+            # можно залогировать, чтобы сразу видеть что URL без inputs/inputs
+            print("INPUT_PATH:", input_path)
+            print("IMAGE_URL:", image_url)
+
             script = build_prompt_with_gpt(
                 system=REELS_UGC_TEMPLATE_V1["system"],
                 instructions=REELS_UGC_TEMPLATE_V1["instructions"],
@@ -129,29 +180,55 @@ async def main():
             if not task_id:
                 raise RuntimeError("KIE: could not extract task_id")
 
+            # если колонка есть — сохраним
+            try:
+                update_job(job_id, {"kie_task_id": task_id})
+            except Exception:
+                pass
+
             await bot.send_message(tg_user_id, "🎬 Генерация запущена. Жду до 5 минут и пришлю результат.")
 
-            info = poll_record_info(task_id, timeout_sec=300, interval_sec=10)
+            # ⚠️ poll_record_info блокирующий (time.sleep внутри),
+            # поэтому выполняем его в отдельном потоке, чтобы не душить event loop
+            info = await asyncio.to_thread(poll_record_info, task_id, 300, 10)
 
             print("\n==== KIE recordInfo raw ====")
             print(json.dumps(info, ensure_ascii=False, indent=2))
             print("==== /KIE recordInfo raw ====\n")
 
-            mp4_url = find_first_mp4_url(info)
-            if not mp4_url:
-                update_job(job_id, {"status": "failed", "error": "no_mp4_url", "finished_at": now_iso()})
-                await bot.send_message(tg_user_id, "❌ Не нашёл mp4 в ответе KIE (JSON в логах воркера).")
+            fail_msg = extract_fail_message(info)
+            if fail_msg:
+                update_job(job_id, {"status": "failed", "error": fail_msg, "finished_at": now_iso()})
+                await bot.send_message(
+                    tg_user_id,
+                    f"❌ KIE не смог обработать изображение/задачу.\nПричина: {fail_msg}"
+                )
                 continue
 
-            data = await download_bytes(mp4_url)
+            video_url = find_video_url(info)
+            if not video_url:
+                update_job(job_id, {"status": "failed", "error": "no_video_url", "finished_at": now_iso()})
+                await bot.send_message(
+                    tg_user_id,
+                    "❌ Я дождался ответа KIE, но не нашёл ссылку на видео.\n"
+                    "JSON ответа сохранён в логах воркера — поправим парсер."
+                )
+                continue
 
+            data = await download_bytes(video_url)
+
+            # безопасный лимит, чтобы не ловить проблемы Telegram
             max_bytes = 45 * 1024 * 1024
             if len(data) > max_bytes:
-                update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": mp4_url})
-                await bot.send_message(tg_user_id, f"✅ Видео готово! Ссылка:\n{mp4_url}")
+                update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": video_url})
+                await bot.send_message(tg_user_id, f"✅ Видео готово! Ссылка:\n{video_url}")
             else:
-                await bot.send_video(tg_user_id, video=BufferedInputFile(data, filename="reels.mp4"), caption="✅ Готово!")
-                update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": mp4_url})
+                await bot.send_video(
+                    tg_user_id,
+                    video=BufferedInputFile(data, filename="reels.mp4"),
+                    caption="✅ Готово!"
+                )
+                update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": video_url})
 
         except Exception as e:
             print("WORKER_ERROR:", repr(e))
