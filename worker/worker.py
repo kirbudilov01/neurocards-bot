@@ -54,14 +54,9 @@ def get_user_by_id(user_id: str):
 
 
 def normalize_storage_path(input_path: str) -> str:
-    """
-    Делаем путь ОТНОСИТЕЛЬНЫМ внутри bucket 'inputs':
-    - было: 'inputs/523/...jpg' -> станет '523/...jpg'
-    - было: '/inputs/523/...jpg' -> станет '523/...jpg'
-    - было: '523/...jpg' -> остаётся так
-    """
     p = (input_path or "").strip().lstrip("/")
-    if p.startswith("inputs/"):
+    # убрать любые повторяющиеся inputs/ в начале
+    while p.startswith("inputs/"):
         p = p[len("inputs/"):]
     return p
 
