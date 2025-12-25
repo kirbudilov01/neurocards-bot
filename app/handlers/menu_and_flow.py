@@ -68,23 +68,19 @@ async def again(cb: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "cabinet")
 async def cabinet(cb: CallbackQuery):
     await cb.answer()
-    try:
-        u = get_or_create_user(cb.from_user.id, cb.from_user.username)
+    u = get_or_create_user(cb.from_user.id, cb.from_user.username)
+    bal = _get_balance(cb.from_user.id)
 
-        bal = _get_balance(cb.from_user.id)
-        username = (u.get("username") or "").lstrip("@")
-        uid = u.get("tg_user_id") or cb.from_user.id
+    username = (u.get("username") or "").lstrip("@")
+    uname_line = f"@{username}" if username else "—"
 
-        uname_line = f"@{username}" if username else "—"
-
-        await cb.message.answer(
-            "👤 Личный кабинет\n\n"
-            f"🆔 ID: {uid}\n"
-            f"👤 Username: {uname_line}\n"
-            f"💳 Баланс: {bal} кредит(ов)\n\n"
-            "Если что-то сломалось — пиши в поддержку.",
-            reply_markup=kb_cabinet(),
-        )
+    await cb.message.answer(
+        "👤 Добро пожаловать в оичный кабинет!\n\n"
+        f"💳 Ваш баланс: {bal} кредит(ов)\n"
+        f"👤 Ваш телеграм: {uname_line}\n\n"
+        "Если что-то пошло не так — пишите в поддержку.",
+        reply_markup=kb_cabinet(),
+    )
     except Exception as e:
         # чтобы бот не молчал
         await cb.message.answer(f"❌ Ошибка кабинета: {e}", reply_markup=kb_menu())
