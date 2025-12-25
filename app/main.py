@@ -13,6 +13,10 @@ WEBHOOK_PATH = "/telegram/webhook"
 PUBLIC_APP_URL = os.getenv("PUBLIC_APP_URL", "").rstrip("/")
 WEBHOOK_URL = f"{PUBLIC_APP_URL}{WEBHOOK_PATH}"
 
+dp.include_router(start.router)
+dp.include_router(menu_and_flow.router)
+dp.include_router(fallback.router)  # <- последним
+
 logging.basicConfig(level=logging.INFO)
 
 async def on_startup(bot: Bot):
