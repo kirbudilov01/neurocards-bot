@@ -17,15 +17,23 @@ MENU_TEXT = getattr(texts, "MENU", "Выберите действие 👇")
 def _get_balance(tg_user_id: int) -> int:
     res = (
         supabase.table("users")
-        .select("balance")
+        .select("*")
         .eq("tg_user_id", tg_user_id)
         .limit(1)
         .execute()
     )
     if not res.data:
         return 0
-    return int(res.data[0].get("balance") or 0)
 
+    row = res.data[0] or {}
+
+    # поддержим оба варианта названия поля
+    if "balance" in row and row["balance"] is not None:
+        return int(row["balance"])
+    if "credits" in row and row["credits"] is not None:
+        return int(row["credits"])
+
+    return 0
 
 # ---------- REELS FLOW STATES ----------
 class ReelsFlow(StatesGroup):
@@ -60,21 +68,26 @@ async def again(cb: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "cabinet")
 async def cabinet(cb: CallbackQuery):
     await cb.answer()
-    u = get_or_create_user(cb.from_user.id, cb.from_user.username)
+    try:
+        u = get_or_create_user(cb.from_user.id, cb.from_user.username)
 
-    bal = _get_balance(cb.from_user.id)
+        bal = _get_balance(cb.from_user.id)
+        username = (u.get("username") or "").lstrip("@")
+        uid = u.get("tg_user_id") or cb.from_user.id
 
-    username = u.get("username") or "-"
-    uid = u.get("tg_user_id") or cb.from_user.id
+        uname_line = f"@{username}" if username else "—"
 
-    await cb.message.answer(
-        "👤 Личный кабинет\n\n"
-        f"🆔 ID: {uid}\n"
-        f"👤 Username: @{username}\n"
-        f"💳 Баланс: {bal} кредит(ов)\n\n"
-        "Если что-то сломалось — пиши в поддержку.",
-        reply_markup=kb_cabinet(),
-    )
+        await cb.message.answer(
+            "👤 Личный кабинет\n\n"
+            f"🆔 ID: {uid}\n"
+            f"👤 Username: {uname_line}\n"
+            f"💳 Баланс: {bal} кредит(ов)\n\n"
+            "Если что-то сломалось — пиши в поддержку.",
+            reply_markup=kb_cabinet(),
+        )
+    except Exception as e:
+        # чтобы бот не молчал
+        await cb.message.answer(f"❌ Ошибка кабинета: {e}", reply_markup=kb_menu())
     
 @router.callback_query(F.data == "ref_soon")
 async def ref_soon(cb: CallbackQuery):
