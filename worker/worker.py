@@ -1,19 +1,27 @@
 import asyncio
 import json
 import os
+import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 from aiogram import Bot
 from supabase import create_client
 
-from .openai_prompter import build_prompt_with_gpt
-from .prompt_templates import REELS_UGC_TEMPLATE_V1
+# --- BOOTSTRAP: чтобы импорты работали и как пакет, и как скрипт ---
+# Если воркер запустился без package-контекста, добавим корень проекта в sys.path
+if __package__ is None or __package__ == "":
+    PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
+    if PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, PROJECT_ROOT)
 
-# ✅ Железный импорт: переживёт любые странности в режиме запуска
-try:
-    from .kie_client import create_task_sora_i2v, poll_record_info
-except Exception:
+    from worker.openai_prompter import build_prompt_with_gpt
+    from worker.prompt_templates import REELS_UGC_TEMPLATE_V1
     from worker.kie_client import create_task_sora_i2v, poll_record_info
+else:
+    from .openai_prompter import build_prompt_with_gpt
+    from .prompt_templates import REELS_UGC_TEMPLATE_V1
+    from .kie_client import create_task_sora_i2v, poll_record_info
 
 
 def req(name: str) -> str:
@@ -102,10 +110,8 @@ async def main():
             if not input_path:
                 raise RuntimeError("job.input_photo_path is empty")
 
-            # 1) Публичный URL на фото товара (Kie image_urls)
             input_url = get_public_input_url(input_path)
 
-            # 2) GPT делает сценарий + мини-промпт (по твоей UGC-логике)
             tpl = REELS_UGC_TEMPLATE_V1
             script_and_prompt = build_prompt_with_gpt(
                 system=tpl["system"],
@@ -114,10 +120,8 @@ async def main():
                 extra_wishes=extra_wishes,
             )
 
-            # 3) v1: в Kie шлём весь блок (позже вытащим строго мини-промпт)
             kie_prompt = script_and_prompt
 
-            # 4) createTask (sora-2-image-to-video)
             task_id = create_task_sora_i2v(prompt=kie_prompt, image_url=input_url)
 
             await bot.send_message(
@@ -126,7 +130,6 @@ async def main():
                 "⏳ Ожидай 3–5 минут. Я пришлю результат."
             )
 
-            # 5) recordInfo — логируем сырой JSON (чтобы увидеть, где ссылка на mp4)
             info = poll_record_info(task_id)
 
             print("\n==== KIE recordInfo raw ====")
