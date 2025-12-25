@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import os
 
@@ -8,7 +7,6 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from aiohttp import web
 
 from app.config import BOT_TOKEN
-
 from app.handlers import start, menu_and_flow, fallback
 
 WEBHOOK_PATH = "/telegram/webhook"
@@ -20,8 +18,6 @@ logging.basicConfig(level=logging.INFO)
 async def on_startup(bot: Bot):
     if not PUBLIC_APP_URL:
         raise RuntimeError("Missing env var: PUBLIC_APP_URL")
-
-    # Сброс старого webhook/polling и установка нового
     await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(WEBHOOK_URL)
 
