@@ -8,7 +8,12 @@ from supabase import create_client
 
 from .openai_prompter import build_prompt_with_gpt
 from .prompt_templates import REELS_UGC_TEMPLATE_V1
-from .kie_client import create_task_sora_i2v, poll_record_info
+
+# ✅ Железный импорт: переживёт любые странности в режиме запуска
+try:
+    from .kie_client import create_task_sora_i2v, poll_record_info
+except Exception:
+    from worker.kie_client import create_task_sora_i2v, poll_record_info
 
 
 def req(name: str) -> str:
@@ -93,8 +98,12 @@ async def main():
             product_text = (job.get("product_info") or {}).get("text", "")
             extra_wishes = job.get("extra_wishes")
 
+            input_path = job.get("input_photo_path")
+            if not input_path:
+                raise RuntimeError("job.input_photo_path is empty")
+
             # 1) Публичный URL на фото товара (Kie image_urls)
-            input_url = get_public_input_url(job["input_photo_path"])
+            input_url = get_public_input_url(input_path)
 
             # 2) GPT делает сценарий + мини-промпт (по твоей UGC-логике)
             tpl = REELS_UGC_TEMPLATE_V1
