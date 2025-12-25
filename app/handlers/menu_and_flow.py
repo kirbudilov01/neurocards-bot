@@ -63,8 +63,9 @@ def _get_balance(tg_user_id: int) -> int:
 class GenFlow(StatesGroup):
     waiting_photo = State()
     waiting_product = State()
+    waiting_template = State()
     waiting_wishes = State()
-
+    waiting_user_prompt = State()   # для "сам себе продюсер"
 
 # ---------- MENU ----------
 @router.callback_query(F.data == "continue")
