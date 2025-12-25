@@ -163,7 +163,7 @@ async def main():
                 await bot.send_message(
                     tg_user_id,
                     "❌ Неизвестный тип генерации. Баланс восстановлен ✅",
-                    reply_markup=kb_result("reels"),
+                    reply_markup=kb_result(kind),
                 )
                 await asyncio.sleep(1)
                 continue
