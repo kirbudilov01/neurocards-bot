@@ -10,7 +10,7 @@ from app.keyboards import (
     kb_back_to_menu,
     kb_confirm,
     kb_no_credits,
-    kb_templates,  # должна быть в keyboards.py
+    kb_templates,
 )
 from app.db import get_or_create_user, supabase
 from app.services.generation import start_generation
@@ -106,16 +106,6 @@ async def cabinet(cb: CallbackQuery):
     )
 
 
-@router.callback_query(F.data == "ref_soon")
-async def ref_soon(cb: CallbackQuery):
-    await cb.answer()
-    await cb.message.answer(
-        "🤝 Реферальная система будет чуть позже 🙂",
-        reply_markup=kb_cabinet(),
-        parse_mode=PARSE_MODE,
-    )
-
-
 # ---------- SUPPORT ----------
 @router.callback_query(F.data == "support")
 async def support(cb: CallbackQuery):
@@ -128,7 +118,7 @@ async def support(cb: CallbackQuery):
     )
 
 
-# ---------- START REELS ----------
+# ---------- START (NEUROVIDEO) ----------
 @router.callback_query(F.data == "make_reels")
 async def make_reels(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
@@ -143,42 +133,17 @@ async def make_reels(cb: CallbackQuery, state: FSMContext):
     )
 
 
-# ---------- START NEUROCARD ----------
-@router.callback_query(F.data == "make_neurocard")
-async def make_neurocard(cb: CallbackQuery, state: FSMContext):
-    await cb.answer()
-    await state.clear()
-    await state.update_data(kind="neurocard")
-    await state.set_state(GenFlow.waiting_photo)
-
-    await cb.message.answer(
-        getattr(texts, "ASK_PHOTO", "Пришли фото товара (без людей в кадре)."),
-        reply_markup=kb_back_to_menu(),
-        parse_mode=PARSE_MODE,
-    )
-
-
 # ---------- PHOTO (универсально: photo + document image/*) ----------
-# ---------- PHOTO (photo) ----------
-@router.message(GenFlow.waiting_photo, F.photo)
-async def on_photo(message: Message, state: FSMContext):
-    file_id = message.photo[-1].file_id
-    await state.update_data(photo_file_id=file_id)
-    await state.set_state(GenFlow.waiting_product)
+@router.message(GenFlow.waiting_photo)
+async def on_any_image(message: Message, state: FSMContext):
+    file_id = None
 
-    await message.answer(
-        texts.ASK_PRODUCT_TEXT,
-        reply_markup=kb_back_to_menu(),
-        parse_mode=PARSE_MODE,
-    )
+    if message.photo:
+        file_id = message.photo[-1].file_id
+    elif message.document and (message.document.mime_type or "").startswith("image/"):
+        file_id = message.document.file_id
 
-
-# ---------- PHOTO (document image/*) ----------
-@router.message(GenFlow.waiting_photo, F.document)
-async def on_photo_document(message: Message, state: FSMContext):
-    doc = message.document
-
-    if not (doc.mime_type or "").startswith("image/"):
+    if not file_id:
         await message.answer(
             "❌ Пришли именно изображение товара (фото).\n"
             "Можно как фото или как файл, но это должно быть изображение.",
@@ -187,25 +152,16 @@ async def on_photo_document(message: Message, state: FSMContext):
         )
         return
 
-    await state.update_data(photo_file_id=doc.file_id)
+    await state.update_data(photo_file_id=file_id)
     await state.set_state(GenFlow.waiting_product)
 
     await message.answer(
-        texts.ASK_PRODUCT_TEXT,
+        getattr(texts, "ASK_PRODUCT_TEXT", "Напиши информацию о товаре одним сообщением."),
         reply_markup=kb_back_to_menu(),
         parse_mode=PARSE_MODE,
     )
 
 
-# ---------- PHOTO (wrong) ----------
-@router.message(GenFlow.waiting_photo)
-async def on_photo_wrong(message: Message):
-    await message.answer(
-        "❌ Пришли фото товара.\n"
-        "Если отправляешь файлом — это должно быть изображение (image/*).",
-        reply_markup=kb_back_to_menu(),
-        parse_mode=PARSE_MODE,
-    )
 # ---------- PRODUCT INFO ----------
 @router.message(GenFlow.waiting_product, F.text)
 async def on_product_info(message: Message, state: FSMContext):
@@ -324,14 +280,14 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
         await state.clear()
         return
 
-    job_id, new_credits = await start_generation(
+    job_id, _new_credits = await start_generation(
         bot=cb.bot,
         tg_user_id=cb.from_user.id,
         photo_file_id=photo_file_id,
         kind=kind,
         product_info={"text": product_text, "user_prompt": user_prompt},
         extra_wishes=extra_wishes,
-        template_id=template_id,  # ugc/ad/creative/self
+        template_id=template_id,
     )
 
     if not job_id:
@@ -339,11 +295,3 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
         return
 
     await state.clear()
-
-
-@router.callback_query(F.data == "cancel")
-async def cancel(cb: CallbackQuery, state: FSMContext):
-    await cb.answer("Ок")
-    await state.clear()
-    await show_menu(cb.message, MENU_TEXT, kb_menu())
-
