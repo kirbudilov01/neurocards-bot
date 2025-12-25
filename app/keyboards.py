@@ -75,3 +75,18 @@ def kb_cabinet(support_url: str = "https://t.me/your_support"):
         [InlineKeyboardButton(text="🆘 Служба поддержки", url=support_url)],
         [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")],
     ])
+
+
+def kb_no_credits():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Пополнить баланс", callback_data="topup")],
+        [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
+    ])
+
+
+def kb_started(kind: str = "reels"):
+    # после “генерация запущена”
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Ещё одно видео", callback_data=f"again:{kind}")],
+        [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
+    ])
