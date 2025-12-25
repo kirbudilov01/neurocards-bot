@@ -105,7 +105,24 @@ async def cabinet(cb: CallbackQuery):
         parse_mode=PARSE_MODE,
     )
 
+@router.callback_query(F.data == "topup")
+async def topup(cb: CallbackQuery):
+    await cb.answer()
 
+    await cb.message.answer(
+        texts.TOPUP_TEXT,
+        reply_markup=kb_topup(),
+        parse_mode=PARSE_MODE,
+    )
+
+@router.callback_query(F.data.startswith("pay:"))
+async def pay_stub(cb: CallbackQuery):
+    await cb.answer()
+    await cb.message.answer(
+        texts.PAY_STUB,
+        reply_markup=kb_cabinet(),
+        parse_mode=PARSE_MODE,
+    )
 # ---------- SUPPORT ----------
 @router.callback_query(F.data == "support")
 async def support(cb: CallbackQuery):
