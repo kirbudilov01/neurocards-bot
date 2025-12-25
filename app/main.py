@@ -1,5 +1,7 @@
 import os
 import asyncio
+import traceback
+
 from aiohttp import web
 
 from aiogram import Bot, Dispatcher
