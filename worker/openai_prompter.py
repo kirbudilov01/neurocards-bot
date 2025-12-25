@@ -1,3 +1,8 @@
+api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+print("OPENAI_KEY_PRESENT:", bool(api_key))
+print("OPENAI_KEY_LEN:", len(api_key))
+print("OPENAI_KEY_PREFIX:", api_key[:7])
+
 import os
 import httpx
 
