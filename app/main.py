@@ -4,6 +4,7 @@ from aiohttp import web
 
 from aiogram import Bot, Dispatcher
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiogram.fsm.storage.memory import MemoryStorage  # 🔥 КРИТИЧЕСКИ ВАЖНО
 
 from app.config import BOT_TOKEN
 from app.handlers import start, menu_and_flow, fallback
@@ -15,24 +16,33 @@ WEBHOOK_URL = f"{PUBLIC_APP_URL}{WEBHOOK_PATH}"
 
 
 async def main():
+    # 🔑 Бот
     bot = Bot(BOT_TOKEN)
-    dp = Dispatcher()
 
+    # ✅ FSM будет РАБОТАТЬ
+    dp = Dispatcher(storage=MemoryStorage())
+
+    # 📦 Роутеры (порядок важен)
     dp.include_router(start.router)
     dp.include_router(menu_and_flow.router)
-    dp.include_router(fallback.router)  # обязательно последним
+    dp.include_router(fallback.router)  # ВСЕГДА ПОСЛЕДНИМ
 
+    # 🌐 Web app
     app = web.Application()
 
-    # Регистрируем webhook endpoint
-    SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
+    # Webhook endpoint
+    SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
+    ).register(app, path=WEBHOOK_PATH)
 
-    # ВАЖНО: в твоей версии aiogram тут только 2 аргумента
+    # aiogram v3 — ТОЛЬКО 2 аргумента
     setup_application(app, dp)
 
-    # Ставим webhook
+    # Устанавливаем webhook
     await bot.set_webhook(WEBHOOK_URL)
 
+    # 🚀 Запуск сервера
     port = int(os.getenv("PORT", "10000"))
     runner = web.AppRunner(app)
     await runner.setup()
@@ -41,10 +51,10 @@ async def main():
 
     print("🚀 Webhook bot started", flush=True)
 
+    # держим процесс живым
     try:
-        await asyncio.Event().wait()  # держим процесс
+        await asyncio.Event().wait()
     finally:
-        # аккуратно закрываем сессию (чтобы не было Unclosed client session)
         await bot.session.close()
 
 
