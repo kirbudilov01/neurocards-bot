@@ -19,9 +19,13 @@ def kb_menu():
 
 
 # ========== TEMPLATE ==========
-def kb_template():
+
+def kb_templates():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✨ UGC блогер (шаблон #1)", callback_data="template_1")],
+        [InlineKeyboardButton(text="✨ UGC блогер", callback_data="tpl:ugc")],
+        [InlineKeyboardButton(text="🎥 Рекламное видео (b-roll)", callback_data="tpl:ad")],
+        [InlineKeyboardButton(text="😈 Креативный продюсер", callback_data="tpl:creative")],
+        [InlineKeyboardButton(text="🧑‍💻 Сам себе продюсер", callback_data="tpl:self")],
         [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
     ])
 
