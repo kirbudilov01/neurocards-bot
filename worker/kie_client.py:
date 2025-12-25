@@ -1,0 +1,48 @@
+import os, time
+import httpx
+
+KIE_API_KEY = os.getenv("KIE_API_KEY")
+KIE_CREATE_TASK_URL = os.getenv("KIE_CREATE_TASK_URL", "https://api.kie.ai/api/v1/jobs/createTask")
+KIE_RECORD_INFO_URL = os.getenv("KIE_RECORD_INFO_URL", "https://api.kie.ai/api/v1/jobs/recordInfo")
+
+def _headers():
+    if not KIE_API_KEY:
+        raise RuntimeError("Missing env var: KIE_API_KEY")
+    return {"Authorization": f"Bearer {KIE_API_KEY}", "Content-Type": "application/json"}
+
+def kie_create_sora_i2v(prompt: str, image_url: str) -> str:
+    payload = {
+        "model": "sora-2-image-to-video",
+        "input": {
+            "prompt": prompt,
+            "image_urls": [image_url],
+            "aspect_ratio": "portrait",
+            "n_frames": "15",
+            "remove_watermark": True
+        }
+    }
+    with httpx.Client(timeout=60.0) as c:
+        r = c.post(KIE_CREATE_TASK_URL, headers=_headers(), json=payload)
+        r.raise_for_status()
+        data = r.json()
+
+    # в blueprint taskId берется как recordId: {{12.data.data.recordId}}
+    record_id = data["data"]["recordId"]
+    return record_id
+
+def kie_wait_result(task_id: str, timeout_sec: int = 600) -> dict:
+    deadline = time.time() + timeout_sec
+    with httpx.Client(timeout=60.0) as c:
+        while time.time() < deadline:
+            url = f"{KIE_RECORD_INFO_URL}?taskId={task_id}"
+            r = c.get(url, headers={"Authorization": f"Bearer {KIE_API_KEY}"})
+            r.raise_for_status()
+
+            # blueprint парсит JSON дальше из resultJson
+            info = r.json()
+
+            # Тут статусы у Kie могут отличаться — но минимум: возвращаем всё как есть,
+            # а выше в воркере уже достанем video_url из resultJson.
+            return info
+
+    raise RuntimeError("Kie timeout waiting recordInfo")
