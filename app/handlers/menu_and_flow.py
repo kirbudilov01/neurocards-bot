@@ -78,10 +78,13 @@ async def cabinet(cb: CallbackQuery):
 
     cabinet_tpl = getattr(texts, "CABINET", "👤 Личный кабинет\nБаланс: {credits}\n\nВыбери действие:")
     await cb.message.answer(
-        cabinet_tpl.format(credits=bal),
-        reply_markup=kb_cabinet(),
-    )
-
+    f"👤 *Личный кабинет*\n\n"
+    f"💳 *Баланс:* {bal} кредит(ов)\n\n"
+    "Каждая генерация стоит 1 кредит.\n"
+    "Пополнение и бонусы — скоро 🚀",
+    reply_markup=kb_cabinet(),
+    parse_mode="Markdown"
+)
 
 @router.callback_query(F.data == "ref_soon")
 async def ref_soon(cb: CallbackQuery):
@@ -125,10 +128,12 @@ async def on_photo(message: Message, state: FSMContext):
     await state.set_state(GenFlow.waiting_product)
 
     await message.answer(
-        getattr(texts, "ASK_PRODUCT_INFO", "Напиши информацию о товаре одним сообщением."),
-        reply_markup=kb_back_to_menu(),
-    )
-
+    "✍️ *Напиши информацию о товаре одним сообщением*\n\n"
+    "Можешь просто скопировать описание со страницы маркетплейса.\n"
+    "Чем больше деталей — тем лучше результат 🚀",
+    reply_markup=kb_back_to_menu(),
+    parse_mode="Markdown"
+)
 
 @router.message(GenFlow.waiting_photo)
 async def on_photo_wrong(message: Message):
@@ -145,10 +150,15 @@ async def on_product_info(message: Message, state: FSMContext):
     await state.set_state(GenFlow.waiting_wishes)
 
     await message.answer(
-        getattr(texts, "ASK_WISHES", "Есть ли доп. пожелания? Напиши текстом или «-» если нет."),
-        reply_markup=kb_back_to_menu(),
-    )
-
+    "✨ *Есть ли доп. пожелания?*\n\n"
+    "Например:\n"
+    "— внешность человека\n"
+    "— стиль видео\n"
+    "— настроение\n\n"
+    "Если пожеланий нет — отправь «-»",
+    reply_markup=kb_back_to_menu(),
+    parse_mode="Markdown"
+)
 
 @router.message(GenFlow.waiting_product)
 async def on_product_wrong(message: Message):
@@ -178,7 +188,7 @@ async def on_wishes(message: Message, state: FSMContext):
 @router.callback_query(F.data == "confirm_generation")
 async def confirm_generation(cb: CallbackQuery, state: FSMContext):
     # ВАЖНО: ответить быстро, чтобы не было "query is too old"
-    await cb.answer("Запускаю 🚀")
+    await cb.answer("Запускаю генерацию 🚀")
 
     data = await state.get_data()
     photo_file_id = data.get("photo_file_id")
