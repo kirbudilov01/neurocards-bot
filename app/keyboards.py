@@ -56,10 +56,8 @@ def kb_back_to_menu():
 # ========== CABINET ==========
 def kb_cabinet(support_url: str = "https://t.me/your_support"):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Пополнить баланс", callback_data="balance")],
-        [InlineKeyboardButton(text="🆘 Служба поддержиа", url=support_url)],
-        [InlineKeyboardButton(text="🤝 Пригласить друзей", callback_data="ref_soon")],
-        [InlineKeyboardButton(text="🏠 Вернуться в меню меню", callback_data="back_to_menu")],
+        [InlineKeyboardButton(text="🆘 Служба поддержки", url=support_url)],
+        [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")],
     ])
 
 def kb_after_start(kind: str = "reels"):
