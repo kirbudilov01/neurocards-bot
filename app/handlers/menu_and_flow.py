@@ -97,10 +97,16 @@ async def make_reels(cb: CallbackQuery, state: FSMContext):
 
 # ---------- NEUROCARD (ПОКА СКОРО) ----------
 @router.callback_query(F.data == "make_neurocard")
-async def make_neurocard(cb: CallbackQuery):
+async def make_neurocard(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
-    await cb.message.answer("🧠 Нейрокарточки подключим следующим шагом.", reply_markup=kb_menu())
+    await state.clear()
+    await state.update_data(kind="neurocard", template_id="template_1")
+    await state.set_state(ReelsFlow.waiting_photo)
 
+    await cb.message.answer(
+        "🧠 НЕЙРОКАРТОЧКА\n\nПришли фото товара (важно: без людей в кадре).",
+        reply_markup=kb_back_to_menu()
+    )
 
 # ---------- REELS PHOTO ----------
 @router.message(ReelsFlow.waiting_photo, F.photo)
