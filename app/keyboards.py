@@ -89,8 +89,8 @@ def kb_no_credits():
 
 
 def kb_started(kind: str = "reels"):
-    # после “генерация запущена”
+    again_cb = "make_reels" if kind == "reels" else "make_neurocard"
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Ещё одно видео", callback_data=f"again:{kind}")],
+        [InlineKeyboardButton(text="➕ Ещё одно видео", callback_data=again_cb)],
         [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
     ])
