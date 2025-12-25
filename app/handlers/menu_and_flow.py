@@ -9,6 +9,7 @@ from app.keyboards import (
     kb_cabinet,
     kb_back_to_menu,
     kb_confirm,
+    kb_no_credits,   # важно: должна быть в keyboards.py
 )
 from app.db import get_or_create_user, supabase
 from app.services.generation import start_generation
@@ -118,6 +119,18 @@ async def ref_soon(cb: CallbackQuery):
     )
 
 
+# ---------- SUPPORT ----------
+@router.callback_query(F.data == "support")
+async def support(cb: CallbackQuery):
+    await cb.answer()
+    txt = getattr(texts, "SUPPORT_TEXT", "🆘 Служба поддержки: {url}")
+    await cb.message.answer(
+        txt.format(url="https://t.me/your_support"),
+        reply_markup=kb_menu(),
+        parse_mode=PARSE_MODE,
+    )
+
+
 # ---------- START REELS ----------
 @router.callback_query(F.data == "make_reels")
 async def make_reels(cb: CallbackQuery, state: FSMContext):
@@ -156,7 +169,7 @@ async def on_photo(message: Message, state: FSMContext):
     await state.set_state(GenFlow.waiting_product)
 
     await message.answer(
-        getattr(texts, "ASK_PRODUCT_INFO", "Напиши информацию о товаре одним сообщением."),
+        getattr(texts, "ASK_PRODUCT_TEXT", getattr(texts, "ASK_PRODUCT_INFO", "Напиши информацию о товаре одним сообщением.")),
         reply_markup=kb_back_to_menu(),
         parse_mode=PARSE_MODE,
     )
@@ -226,6 +239,7 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
     kind = data.get("kind", "reels")
     template_id = data.get("template_id", "template_1")
 
+    # 1) проверка данных
     if not photo_file_id or not product_text:
         await cb.message.answer(
             "⚠️ Данных не хватает. Начни заново из меню.",
@@ -235,7 +249,19 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
         await state.clear()
         return
 
-    await start_generation(
+    # 2) проверка баланса ДО создания job/загрузки фото
+    credits = _get_balance(cb.from_user.id)
+    if credits < 1:
+        await cb.message.answer(
+            getattr(texts, "NO_CREDITS", "❌ Недостаточно кредитов. Пополни баланс в личном кабинете."),
+            reply_markup=kb_no_credits(),
+            parse_mode=PARSE_MODE,
+        )
+        await state.clear()
+        return
+
+    # 3) запуск (внутри start_generation: download->upload->create_job->consume_credit->started msg)
+    job_id, new_credits = await start_generation(
         bot=cb.bot,
         tg_user_id=cb.from_user.id,
         photo_file_id=photo_file_id,
@@ -244,6 +270,11 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
         extra_wishes=extra_wishes,
         template_id=template_id,
     )
+
+    # если start_generation вернул None — он уже сообщил пользователю причину
+    if not job_id:
+        await state.clear()
+        return
 
     await state.clear()
 
