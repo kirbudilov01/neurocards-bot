@@ -167,36 +167,14 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
     template_id = data.get("template_id", "template_1")
 
     if not photo_file_id or not product_text:
-        await cb.message.answer("⚠️ Данных не хватает. Начни заново из меню.", reply_markup=kb_back_to_menu())
+        await cb.message.answer(
+            "⚠️ Данных не хватает. Начни заново из меню.",
+            reply_markup=kb_back_to_menu()
+        )
         await state.clear()
         return
 
-    # ставим задачу (внутри: upload + job + consume_credit + сообщение очереди)
-    job_id, new_credits = await start_generation(
-        bot=cb.bot,
-        tg_user_id=cb.from_user.id,
-        photo_file_id=photo_file_id,
-        kind=kind,
-        product_info={"text": product_text},
-        extra_wishes=extra_wishes,
-        template_id=template_id,
-    )
-
-        await cb.answer()
-    data = await state.get_data()
-
-    photo_file_id = data.get("photo_file_id")
-    product_text = data.get("product_text", "")
-    extra_wishes = data.get("extra_wishes")
-    kind = data.get("kind", "reels")
-    template_id = data.get("template_id", "template_1")
-
-    if not photo_file_id or not product_text:
-        await cb.message.answer("⚠️ Данных не хватает. Начни заново из меню.", reply_markup=kb_back_to_menu())
-        await state.clear()
-        return
-
-    # ВАЖНО: start_generation сам отправит одно сообщение + кнопки (kb_after_start)
+    # ВАЖНО: start_generation сам отправляет сообщение (очередь/баланс/кнопки)
     await start_generation(
         bot=cb.bot,
         tg_user_id=cb.from_user.id,
@@ -208,7 +186,3 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
     )
 
     await state.clear()
-# ВАЖНО:
-# make_reels / make_neurocard / template_1 / confirm_generation
-# у тебя уже есть и работает — мы их тут не переписываем.
-# Если у тебя их в этом файле не было — они в другом файле/ветке логики.
