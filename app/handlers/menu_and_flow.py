@@ -13,8 +13,18 @@ from app.keyboards import (
 from app.db import get_or_create_user, supabase
 from app.services.generation import start_generation
 
-router = Router()
+from aiogram.types import FSInputFile
 
+MENU_PHOTO_PATH = "assets/menu.jpg"
+
+async def show_menu(message, text, reply_markup):
+    await message.answer_photo(
+        FSInputFile(MENU_PHOTO_PATH),
+        caption=text,
+        reply_markup=reply_markup
+    )
+    
+router = Router()
 
 # ---------- HELPERS ----------
 def _get_balance(tg_user_id: int) -> int:
@@ -48,26 +58,25 @@ class GenFlow(StatesGroup):
 
 # ---------- MENU ----------
 @router.callback_query(F.data == "continue")
-async def on_continue(cb: CallbackQuery):
+async def on_continue(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
+    await state.clear()
     get_or_create_user(cb.from_user.id, cb.from_user.username)
-    await cb.message.answer(getattr(texts, "MENU", "Выберите действие 👇"), reply_markup=kb_menu())
+    await show_menu(cb.message, MENU_TEXT, kb_menu())
 
 
 @router.callback_query(F.data == "back_to_menu")
 async def back_to_menu(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
     await state.clear()
-    await cb.message.answer(getattr(texts, "MENU", "Выберите действие 👇"), reply_markup=kb_menu())
+    await show_menu(cb.message, MENU_TEXT, kb_menu())
 
 
 @router.callback_query(F.data.startswith("again:"))
 async def again(cb: CallbackQuery, state: FSMContext):
-    # пока просто возвращаем в меню (надёжно)
     await cb.answer("Ок, ещё раз")
     await state.clear()
-    await cb.message.answer(getattr(texts, "MENU", "Выберите действие 👇"), reply_markup=kb_menu())
-
+    await show_menu(cb.message, MENU_TEXT, kb_menu())
 
 # ---------- CABINET ----------
 @router.callback_query(F.data == "cabinet")
