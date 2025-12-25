@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import httpx
 from aiogram import Bot
-from aiogram.types import BufferedInputFile
+from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client
 
 from worker.kie_client import create_task_sora_i2v, poll_record_info
@@ -22,14 +22,27 @@ def req(name: str) -> str:
 
 
 BOT_TOKEN = req("BOT_TOKEN")
-SUPABASE_URL = req("SUPABASE_URL")
+SUPABASE_URL = req("SUPABASE_URL").rstrip("/") + "/"
 SUPABASE_SERVICE_ROLE_KEY = req("SUPABASE_SERVICE_ROLE_KEY")
+INPUTS_BUCKET = (os.getenv("SUPABASE_BUCKET_INPUTS") or "inputs").strip()
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def kb_result(kind: str = "reels") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔁 Сгенерировать ещё видео", callback_data=f"again:{kind}")],
+        [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")],
+    ])
+
+
+def refund_credit(tg_user_id: int, amount: int = 1):
+    # RPC из твоего SQL шага
+    supabase.rpc("refund_credit", {"p_tg_user_id": tg_user_id, "p_amount": amount}).execute()
 
 
 def fetch_next_queued_job():
@@ -53,9 +66,9 @@ def get_user_by_id(user_id: str):
     return res.data[0] if res.data else None
 
 
-def normalize_storage_path(input_path: str) -> str:
-    p = (input_path or "").strip().lstrip("/")
-    # убрать любые повторяющиеся inputs/ в начале
+def normalize_storage_path(path: str) -> str:
+    p = (path or "").strip().lstrip("/")
+    # убираем любые лишние inputs/ в начале (на случай старых записей)
     while p.startswith("inputs/"):
         p = p[len("inputs/"):]
     return p
@@ -63,17 +76,25 @@ def normalize_storage_path(input_path: str) -> str:
 
 def get_public_input_url(input_path: str) -> str:
     rel = normalize_storage_path(input_path)
-
-    pub = supabase.storage.from_("inputs").get_public_url(rel)
+    pub = supabase.storage.from_(INPUTS_BUCKET).get_public_url(rel)
     if isinstance(pub, dict):
         return pub.get("publicUrl") or pub.get("public_url") or str(pub)
     return str(pub)
 
 
+def extract_fail_message(info: dict) -> str | None:
+    try:
+        data = info.get("data") if isinstance(info, dict) else None
+        if isinstance(data, dict):
+            state = (data.get("state") or data.get("status") or "").lower()
+            if state in {"fail", "failed", "error"}:
+                return data.get("failMsg") or data.get("message") or "KIE failed"
+    except Exception:
+        pass
+    return None
+
+
 def find_video_url(obj):
-    """
-    Универсально ищет ссылку на видео (mp4/mov/webm/m3u8) или типичные url-поля.
-    """
     common_keys = {
         "video", "video_url", "videoUrl", "output_url", "outputUrl",
         "url", "download_url", "downloadUrl", "file_url", "fileUrl",
@@ -82,44 +103,23 @@ def find_video_url(obj):
 
     if obj is None:
         return None
-
     if isinstance(obj, dict):
-        # сначала по ключам
         for k, v in obj.items():
             if k in common_keys and isinstance(v, str) and v.startswith("http"):
                 return v
-        # потом глубже
         for v in obj.values():
             got = find_video_url(v)
             if got:
                 return got
-
     if isinstance(obj, list):
         for it in obj:
             got = find_video_url(it)
             if got:
                 return got
-
     if isinstance(obj, str):
         m = re.search(r"https?://[^\s\"']+\.(mp4|mov|webm|m3u8)(\?[^\s\"']+)?", obj, re.I)
         if m:
             return m.group(0)
-
-    return None
-
-
-def extract_fail_message(info: dict) -> str | None:
-    """
-    Достаём failMsg если KIE вернул fail.
-    """
-    try:
-        data = info.get("data") if isinstance(info, dict) else None
-        if isinstance(data, dict):
-            state = (data.get("state") or data.get("status") or "").lower()
-            if state == "fail" or state == "failed":
-                return data.get("failMsg") or data.get("message") or "KIE failed"
-    except Exception:
-        pass
     return None
 
 
@@ -144,47 +144,50 @@ async def main():
         user = get_user_by_id(job["user_id"])
         if not user:
             update_job(job_id, {"status": "failed", "error": "user_not_found", "finished_at": now_iso()})
+            await asyncio.sleep(1)
             continue
 
-        tg_user_id = user["tg_user_id"]
+        tg_user_id = int(user["tg_user_id"])
 
         try:
-            update_job(job_id, {"status": "processing", "started_at": now_iso()})
+            attempts = int(job.get("attempts") or 0) + 1
+            update_job(job_id, {"status": "processing", "started_at": now_iso(), "attempts": attempts})
 
-            if job.get("kind") != "reels":
-                raise RuntimeError("Only reels supported (demo)")
+            kind = job.get("kind") or "reels"
+            if kind != "reels":
+                # Пока только reels (следующим шагом подключим neurocard)
+                refund_credit(tg_user_id, 1)
+                update_job(job_id, {"status": "failed", "error": "kind_not_supported_yet", "finished_at": now_iso()})
+                await bot.send_message(tg_user_id, "Пока поддерживается только раздел 🎬 REELS. Ваш баланс восстановлен ✅", reply_markup=kb_result("reels"))
+                await asyncio.sleep(1)
+                continue
 
             input_path = job.get("input_photo_path")
             if not input_path:
                 raise RuntimeError("Missing input_photo_path")
 
             image_url = get_public_input_url(input_path)
-
-            # можно залогировать, чтобы сразу видеть что URL без inputs/inputs
-            print("INPUT_PATH:", input_path)
             print("IMAGE_URL:", image_url)
+
+            product_text = (job.get("product_info") or {}).get("text", "")
+            extra_wishes = job.get("extra_wishes")
 
             script = build_prompt_with_gpt(
                 system=REELS_UGC_TEMPLATE_V1["system"],
                 instructions=REELS_UGC_TEMPLATE_V1["instructions"],
-                product_text=(job.get("product_info") or {}).get("text", ""),
-                extra_wishes=job.get("extra_wishes"),
+                product_text=product_text,
+                extra_wishes=extra_wishes,
             )
 
             task_id = create_task_sora_i2v(prompt=script, image_url=image_url)
             if not task_id:
                 raise RuntimeError("KIE: could not extract task_id")
 
-            # если колонка есть — сохраним
-            try:
-                update_job(job_id, {"kie_task_id": task_id})
-            except Exception:
-                pass
+            update_job(job_id, {"kie_task_id": task_id})
 
-            await bot.send_message(tg_user_id, "🎬 Генерация запущена. Жду до 5 минут и пришлю результат.")
+            await bot.send_message(tg_user_id, "🎬 Генерация запущена. Пока вы ожидаете около 5 минут, можете заказать создание еще одного видео.")
 
-            # ⚠️ poll_record_info блокирующий (time.sleep внутри),
-            # поэтому выполняем его в отдельном потоке, чтобы не душить event loop
+            # poll_record_info блокирует (time.sleep), поэтому в thread
             info = await asyncio.to_thread(poll_record_info, task_id, 300, 10)
 
             print("\n==== KIE recordInfo raw ====")
@@ -193,43 +196,56 @@ async def main():
 
             fail_msg = extract_fail_message(info)
             if fail_msg:
+                refund_credit(tg_user_id, 1)
                 update_job(job_id, {"status": "failed", "error": fail_msg, "finished_at": now_iso()})
                 await bot.send_message(
                     tg_user_id,
-                    f"❌ KIE не смог обработать изображение/задачу.\nПричина: {fail_msg}"
+                    f"❌ Ошибка генерации. 1 кредит вернули наш баланс ✅\nПричина: {fail_msg}",
+                    reply_markup=kb_result("reels"),
                 )
+                await asyncio.sleep(1)
                 continue
 
             video_url = find_video_url(info)
             if not video_url:
+                refund_credit(tg_user_id, 1)
                 update_job(job_id, {"status": "failed", "error": "no_video_url", "finished_at": now_iso()})
                 await bot.send_message(
                     tg_user_id,
-                    "❌ Я дождался ответа KIE, но не нашёл ссылку на видео.\n"
-                    "JSON ответа сохранён в логах воркера — поправим парсер."
+                    "❌ Я дождался ответа KIE, но не нашёл ссылку на видео. Кредит вернул ✅",
+                    reply_markup=kb_result("reels"),
                 )
+                await asyncio.sleep(1)
                 continue
 
             data = await download_bytes(video_url)
 
-            # безопасный лимит, чтобы не ловить проблемы Telegram
             max_bytes = 45 * 1024 * 1024
             if len(data) > max_bytes:
                 update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": video_url})
-                await bot.send_message(tg_user_id, f"✅ Видео готово! Ссылка:\n{video_url}")
+                await bot.send_message(
+                    tg_user_id,
+                    f"✅ Ваше видео готово! Ссылка на скачивание:\n{video_url}",
+                    reply_markup=kb_result("reels"),
+                )
             else:
                 await bot.send_video(
                     tg_user_id,
                     video=BufferedInputFile(data, filename="reels.mp4"),
-                    caption="✅ Готово!"
+                    caption="✅ Ваше видео готово! Не забудьте поделиться этим ботом с друзьями, чтобы получить бесплатные кредиты.",
+                    reply_markup=kb_result("reels"),
                 )
                 update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": video_url})
 
         except Exception as e:
             print("WORKER_ERROR:", repr(e))
+            try:
+                refund_credit(tg_user_id, 1)
+            except Exception:
+                pass
             update_job(job_id, {"status": "failed", "error": str(e), "finished_at": now_iso()})
             try:
-                await bot.send_message(tg_user_id, f"❌ Ошибка генерации:\n{e}")
+                await bot.send_message(tg_user_id, f"❌ Проиозошла ошибка генерации. 1 кредит вернулся на ваш баланс ✅\n{e}", reply_markup=kb_result("reels"))
             except Exception:
                 pass
 
