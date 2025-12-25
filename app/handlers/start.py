@@ -1,21 +1,22 @@
 from aiogram import Router
+from aiogram.filters import CommandStart
 from aiogram.types import Message, FSInputFile
-from app.keyboards import kb_continue
+
 from app import texts
+from app.keyboards import kb_continue
 from app.db import get_or_create_user
 
 router = Router()
 
-WELCOME_VIDEO_PATH = "assets/welcome.mp4"   # положи файл в репу
-MENU_PHOTO_PATH = "assets/menu.jpg"         # положи файл в репу (или убери, если не надо)
+WELCOME_VIDEO_PATH = "assets/welcome.mp4"
 
-@router.message()
+@router.message(CommandStart())
 async def start_handler(message: Message):
-    if message.text and message.text.startswith("/start"):
-        get_or_create_user(message.from_user.id, message.from_user.username)
+    get_or_create_user(message.from_user.id, message.from_user.username)
 
-        # 1) видео (если файла нет — просто закомментируй 2 строки)
+    try:
         await message.answer_video(FSInputFile(WELCOME_VIDEO_PATH))
+    except Exception:
+        pass
 
-        # 2) приветственный текст
-        await message.answer(texts.WELCOME, reply_markup=kb_continue())
+    await message.answer(texts.WELCOME, reply_markup=kb_continue(), parse_mode="HTML")
