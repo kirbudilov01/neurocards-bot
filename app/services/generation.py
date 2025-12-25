@@ -1,6 +1,7 @@
 import uuid
 
-from app.keyboards import kb_after_start
+from app import texts
+from app.keyboards import kb_no_credits, kb_started
 from app.services.tg_files import download_photo_bytes
 from app.services.storage import upload_input_photo
 from app.db import create_job, consume_credit, get_queue_position
@@ -34,23 +35,37 @@ async def start_generation(
     )
 
     # 4) списать кредит атомарно
-    new_credits = consume_credit(tg_user_id, job["id"])
-
-    # 5) позиция в очереди + сообщение пользователю (не ломает вызывающий код)
     try:
-        pos = get_queue_position(job["id"])
+        new_credits = consume_credit(tg_user_id, job["id"])
+    except Exception:
+        # если кредит списать не удалось (например, не хватает)
         await bot.send_message(
             tg_user_id,
-            "✅ Заказ принят и поставлен в очередь.\n"
-            f"📌 Позиция: {pos}\n"
-            f"💳 Баланс: {new_credits} кредит(ов)\n"
-            "⏳ Обычно 3–5 минут на одну генерацию.",
-            reply_markup=kb_after_start(kind),
+            getattr(texts, "NO_CREDITS", "❌ Недостаточно кредитов. Пополни баланс в личном кабинете."),
+            reply_markup=kb_no_credits(),
+            parse_mode="HTML",
         )
-      
+        # чтобы вызывающий код не падал
+        return None, None
+
+    # 5) (опционально) считаем позицию, но НЕ шлём отдельным сообщением
+    # оставим на будущее: можно дописать в текст, если захочешь
+    try:
+        _ = get_queue_position(job["id"])
     except Exception:
-        # если вдруг очередь не посчиталась — генерацию не ломаем
         pass
 
-    # ВОЗВРАЩАЕМ КАК РАНЬШЕ (2 значения), чтобы ничего не отвалилось
+    # 6) одно красивое сообщение “генерация запущена” + баланс + кнопки
+    started_tpl = getattr(
+        texts,
+        "GENERATION_STARTED",
+        "Генерация запущена. Баланс: {credits}",
+    )
+    await bot.send_message(
+        tg_user_id,
+        started_tpl.format(credits=new_credits),
+        reply_markup=kb_started(kind),
+        parse_mode="HTML",
+    )
+
     return job["id"], new_credits
