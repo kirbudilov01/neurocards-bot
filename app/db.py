@@ -63,3 +63,46 @@ def fetch_next_queued_job() -> Optional[Dict[str, Any]]:
     """
     res = supabase.table("jobs").select("*").eq("status", "queued").order("created_at", desc=False).limit(1).execute()
     return res.data[0] if res.data else None
+
+def get_queue_position(job_id: str) -> int:
+    """
+    Позиция в очереди: сколько queued/processing задач создано раньше этой + 1.
+    MVP-версия (через len списка).
+    """
+    j = supabase.table("jobs").select("created_at").eq("id", job_id).limit(1).execute()
+    if not j.data:
+        return 1
+    created_at = j.data[0]["created_at"]
+
+    r = (
+        supabase.table("jobs")
+        .select("id")
+        .in_("status", ["queued", "processing"])
+        .lt("created_at", created_at)
+        .execute()
+    )
+    return (len(r.data) if r.data else 0) + 1
+
+
+def get_user_balance(tg_user_id: int) -> int:
+    r = supabase.table("users").select("balance").eq("tg_user_id", tg_user_id).limit(1).execute()
+    if not r.data:
+        return 0
+    return int(r.data[0].get("balance") or 0)
+
+
+def list_last_jobs(tg_user_id: int, limit: int = 5) -> list[dict]:
+    u = supabase.table("users").select("id").eq("tg_user_id", tg_user_id).limit(1).execute()
+    if not u.data:
+        return []
+    user_id = u.data[0]["id"]
+
+    r = (
+        supabase.table("jobs")
+        .select("id,kind,status,created_at,output_url,error")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return r.data or []
