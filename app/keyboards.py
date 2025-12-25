@@ -61,3 +61,11 @@ def kb_cabinet(support_url: str = "https://t.me/your_support"):
         [InlineKeyboardButton(text="🤝 Пригласить друзей", callback_data="ref_soon")],
         [InlineKeyboardButton(text="🏠 Вернуться в меню меню", callback_data="back_to_menu")],
     ])
+
+def kb_after_start(kind: str = "reels"):
+    # kind: "reels" | "neurocard"
+    again_cb = "make_reels" if kind == "reels" else "make_neurocard"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🎬 Ещё одно видео", callback_data=again_cb)],
+        [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
+    ])
