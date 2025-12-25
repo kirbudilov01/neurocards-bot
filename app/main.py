@@ -1,8 +1,5 @@
 import os
 import asyncio
-import time
-import traceback
-
 from aiohttp import web
 
 from aiogram import Bot, Dispatcher
@@ -17,7 +14,6 @@ WEBHOOK_URL = f"{PUBLIC_APP_URL}{WEBHOOK_PATH}"
 
 
 async def on_startup(bot: Bot):
-    # выставляем webhook на URL твоего web service
     await bot.set_webhook(WEBHOOK_URL)
 
 
@@ -30,17 +26,18 @@ def main():
     bot = Bot(BOT_TOKEN)
     dp = Dispatcher()
 
-    # ✅ подключаем роутеры ПОСЛЕ создания dp
     dp.include_router(start.router)
     dp.include_router(menu_and_flow.router)
-    dp.include_router(fallback.router)  # последним
+    dp.include_router(fallback.router)  # fallback — последним
 
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
 
     app = web.Application()
 
-    SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
+    SimpleRequestHandler(dispatcher=dp, bot=bot).register(
+        app, path=WEBHOOK_PATH
+    )
     setup_application(app, dp, bot=bot)
 
     port = int(os.getenv("PORT", "10000"))
@@ -48,10 +45,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except Exception:
-        print("WORKER_FATAL_ERROR:\n", traceback.format_exc(), flush=True)
-        # чтобы Render не устраивал "дребезг" рестартов
-        while True:
-            time.sleep(60)
+    main()  # ✅ БЕЗ asyncio.run
