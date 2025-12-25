@@ -1,13 +1,18 @@
 import os
 import httpx
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
+def _req(name: str) -> str:
+    v = (os.getenv(name) or "").strip()
+    if not v:
+        raise RuntimeError(f"Missing env var: {name}")
+    return v
+
 
 def build_prompt_with_gpt(system: str, instructions: str, product_text: str, extra_wishes: str | None) -> str:
-    if not OPENAI_API_KEY:
-        raise RuntimeError("Missing env var: OPENAI_API_KEY")
+    api_key = _req("OPENAI_API_KEY")
 
-    wishes = extra_wishes.strip() if extra_wishes else "нет"
+    wishes = (extra_wishes or "").strip() or "нет"
 
     user_msg = (
         f"{instructions}\n\n"
@@ -25,10 +30,15 @@ def build_prompt_with_gpt(system: str, instructions: str, product_text: str, ext
         "temperature": 0.7,
     }
 
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
     with httpx.Client(timeout=120.0) as client:
         r = client.post(
             "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
+            headers=headers,
             json=payload,
         )
         r.raise_for_status()
