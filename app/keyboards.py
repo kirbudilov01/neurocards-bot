@@ -18,7 +18,6 @@ def kb_menu():
 
 
 # ========== TEMPLATE ==========
-
 def kb_templates():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✨ UGC блогер", callback_data="tpl:ugc")],
@@ -34,22 +33,6 @@ def kb_confirm():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🚀 Запустить (1 кредит)", callback_data="confirm_generation")],
         [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")],
-    ])
-
-
-# ========== AFTER GENERATION ==========
-def kb_result(kind: str = "reels"):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔁 Сгенерировать ещё", callback_data=f"again:{kind}")],
-        [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")],
-    ])
-
-
-def kb_after_start(kind: str = "reels"):
-    again_cb = "make_reels" if kind == "reels" else "make_neurocard"
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Ещё одно видео", callback_data=again_cb)],
-        [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
     ])
 
 
@@ -87,9 +70,9 @@ def kb_no_credits():
     ])
 
 
-def kb_started(kind: str = "reels"):
-    again_cb = "make_reels" if kind == "reels" else "make_neurocard"
+# после “генерация запущена”
+def kb_started():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Ещё одно видео", callback_data=again_cb)],
+        [InlineKeyboardButton(text="➕ Ещё одно видео", callback_data="make_reels")],
         [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
     ])
