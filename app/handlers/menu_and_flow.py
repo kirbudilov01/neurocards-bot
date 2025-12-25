@@ -11,6 +11,7 @@ from app.keyboards import (
     kb_confirm,
     kb_no_credits,
     kb_templates,
+    kb_topup,     # ✅ ВАЖНО
 )
 from app.db import get_or_create_user, supabase
 from app.services.generation import start_generation
@@ -22,7 +23,6 @@ MENU_PHOTO_PATH = "assets/menu.jpg"
 MENU_TEXT = getattr(texts, "MENU", "Выберите действие 👇")
 
 
-# ---------- MENU RENDER ----------
 async def show_menu(message, text, reply_markup):
     try:
         await message.answer_photo(
@@ -35,7 +35,6 @@ async def show_menu(message, text, reply_markup):
         await message.answer(text, reply_markup=reply_markup, parse_mode=PARSE_MODE)
 
 
-# ---------- HELPERS ----------
 def _get_balance(tg_user_id: int) -> int:
     res = (
         supabase.table("users")
@@ -55,16 +54,14 @@ def _get_balance(tg_user_id: int) -> int:
     return 0
 
 
-# ---------- FLOW STATES ----------
 class GenFlow(StatesGroup):
     waiting_photo = State()
     waiting_product = State()
     waiting_template = State()
     waiting_wishes = State()
-    waiting_user_prompt = State()  # для "Сам себе продюсер"
+    waiting_user_prompt = State()
 
 
-# ---------- MENU ----------
 @router.callback_query(F.data == "continue")
 async def on_continue(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
@@ -87,7 +84,6 @@ async def again(cb: CallbackQuery, state: FSMContext):
     await show_menu(cb.message, MENU_TEXT, kb_menu())
 
 
-# ---------- CABINET ----------
 @router.callback_query(F.data == "cabinet")
 async def cabinet(cb: CallbackQuery):
     await cb.answer()
@@ -105,25 +101,27 @@ async def cabinet(cb: CallbackQuery):
         parse_mode=PARSE_MODE,
     )
 
+
 @router.callback_query(F.data == "topup")
 async def topup(cb: CallbackQuery):
     await cb.answer()
-
     await cb.message.answer(
-        texts.TOPUP_TEXT,
+        getattr(texts, "TOPUP_TEXT", "Пополнение баланса"),
         reply_markup=kb_topup(),
         parse_mode=PARSE_MODE,
     )
+
 
 @router.callback_query(F.data.startswith("pay:"))
 async def pay_stub(cb: CallbackQuery):
     await cb.answer()
     await cb.message.answer(
-        texts.PAY_STUB,
+        getattr(texts, "PAY_STUB", "Оплата в разработке."),
         reply_markup=kb_cabinet(),
         parse_mode=PARSE_MODE,
     )
-# ---------- SUPPORT ----------
+
+
 @router.callback_query(F.data == "support")
 async def support(cb: CallbackQuery):
     await cb.answer()
@@ -135,7 +133,6 @@ async def support(cb: CallbackQuery):
     )
 
 
-# ---------- START (NEUROVIDEO) ----------
 @router.callback_query(F.data == "make_reels")
 async def make_reels(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
@@ -150,7 +147,6 @@ async def make_reels(cb: CallbackQuery, state: FSMContext):
     )
 
 
-# ---------- PHOTO (универсально: photo + document image/*) ----------
 @router.message(GenFlow.waiting_photo)
 async def on_any_image(message: Message, state: FSMContext):
     file_id = None
@@ -179,7 +175,6 @@ async def on_any_image(message: Message, state: FSMContext):
     )
 
 
-# ---------- PRODUCT INFO ----------
 @router.message(GenFlow.waiting_product, F.text)
 async def on_product_info(message: Message, state: FSMContext):
     await state.update_data(product_text=message.text.strip())
@@ -201,18 +196,26 @@ async def on_product_wrong(message: Message):
     )
 
 
-# ---------- TEMPLATE CHOICE ----------
 @router.callback_query(GenFlow.waiting_template, F.data.startswith("tpl:"))
 async def on_template(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
     template_id = cb.data.split(":", 1)[1]  # ugc/ad/creative/self
+
+    # ✅ страхуемся от мусора
+    if template_id not in {"ugc", "ad", "creative", "self"}:
+        template_id = "ugc"
+
     await state.update_data(template_id=template_id)
 
     if template_id == "self":
         await state.set_state(GenFlow.waiting_user_prompt)
         await cb.message.answer(
-            "🧑‍💻 Вставь свой prompt для Sora/KIE одним сообщением.\n\n"
-            "Важно: вертикально 9:16, без текста/субтитров/надписей на видео.",
+            getattr(
+                texts,
+                "ASK_SELF_PROMPT",
+                "🧑‍💻 Вставь свой prompt для Sora/KIE одним сообщением.\n\n"
+                "Важно: вертикально 9:16, без текста/субтитров/надписей на видео.",
+            ),
             reply_markup=kb_back_to_menu(),
             parse_mode=PARSE_MODE,
         )
@@ -226,7 +229,6 @@ async def on_template(cb: CallbackQuery, state: FSMContext):
     )
 
 
-# ---------- USER PROMPT (SELF) ----------
 @router.message(GenFlow.waiting_user_prompt, F.text)
 async def on_user_prompt(message: Message, state: FSMContext):
     user_prompt = message.text.strip()
@@ -245,7 +247,6 @@ async def on_user_prompt(message: Message, state: FSMContext):
     )
 
 
-# ---------- WISHES ----------
 @router.message(GenFlow.waiting_wishes, F.text)
 async def on_wishes(message: Message, state: FSMContext):
     txt = message.text.strip()
@@ -265,7 +266,6 @@ async def on_wishes(message: Message, state: FSMContext):
     )
 
 
-# ---------- CONFIRM ----------
 @router.callback_query(F.data == "confirm_generation")
 async def confirm_generation(cb: CallbackQuery, state: FSMContext):
     await cb.answer("Запускаю генерацию 🚀")
@@ -275,8 +275,11 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
     product_text = (data.get("product_text") or "").strip()
     extra_wishes = data.get("extra_wishes")
     kind = data.get("kind", "reels")
-    template_id = data.get("template_id", "ugc")
+    template_id = data.get("template_id") or "ugc"
     user_prompt = data.get("user_prompt")
+
+    if template_id not in {"ugc", "ad", "creative", "self"}:
+        template_id = "ugc"
 
     if not photo_file_id or not product_text:
         await cb.message.answer(
@@ -306,9 +309,5 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
         extra_wishes=extra_wishes,
         template_id=template_id,
     )
-
-    if not job_id:
-        await state.clear()
-        return
 
     await state.clear()
