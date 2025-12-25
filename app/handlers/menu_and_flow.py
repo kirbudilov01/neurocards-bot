@@ -158,8 +158,7 @@ async def make_neurocard(cb: CallbackQuery, state: FSMContext):
         parse_mode=PARSE_MODE,
     )
 
-
-# ---------- PHOTO ----------
+# ---------- PHOTO (image) ----------
 @router.message(GenFlow.waiting_photo, F.photo)
 async def on_photo(message: Message, state: FSMContext):
     photo = message.photo[-1]
@@ -167,11 +166,29 @@ async def on_photo(message: Message, state: FSMContext):
     await state.set_state(GenFlow.waiting_product)
 
     await message.answer(
-        getattr(
-            texts,
-            "ASK_PRODUCT_TEXT",
-            getattr(texts, "ASK_PRODUCT_INFO", "Напиши информацию о товаре одним сообщением."),
-        ),
+        texts.ASK_PRODUCT_TEXT,
+        reply_markup=kb_back_to_menu(),
+        parse_mode=PARSE_MODE,
+    )
+
+
+# ---------- PHOTO (document) ----------
+@router.message(GenFlow.waiting_photo, F.document)
+async def on_photo_document(message: Message, state: FSMContext):
+    doc = message.document
+
+    if not doc.mime_type or not doc.mime_type.startswith("image/"):
+        await message.answer(
+            "❌ Пришли именно изображение (фото товара).",
+            reply_markup=kb_back_to_menu(),
+        )
+        return
+
+    await state.update_data(photo_file_id=doc.file_id)
+    await state.set_state(GenFlow.waiting_product)
+
+    await message.answer(
+        texts.ASK_PRODUCT_TEXT,
         reply_markup=kb_back_to_menu(),
         parse_mode=PARSE_MODE,
     )
