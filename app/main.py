@@ -47,4 +47,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+    except Exception:
+        print("WORKER_FATAL_ERROR:\n", traceback.format_exc(), flush=True)
+        # чтобы Render не устраивал "дребезг" рестартов
+        while True:
+            time.sleep(60)
