@@ -1,5 +1,3 @@
-raise SystemExit("WORKER_REACHED_CODE")
-
 import os
 import time
 import httpx
