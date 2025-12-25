@@ -1,5 +1,6 @@
 import uuid
 
+from app.keyboards import kb_after_start
 from app.services.tg_files import download_photo_bytes
 from app.services.storage import upload_input_photo
 from app.db import create_job, consume_credit, get_queue_position
