@@ -159,19 +159,26 @@ async def make_neurocard(cb: CallbackQuery, state: FSMContext):
 
 
 # ---------- PHOTO (универсально: photo + document image/*) ----------
-@router.message(GenFlow.waiting_photo)
-async def on_any_image(message: Message, state: FSMContext):
-    file_id = None
+# ---------- PHOTO (photo) ----------
+@router.message(GenFlow.waiting_photo, F.photo)
+async def on_photo(message: Message, state: FSMContext):
+    file_id = message.photo[-1].file_id
+    await state.update_data(photo_file_id=file_id)
+    await state.set_state(GenFlow.waiting_product)
 
-    # обычное фото
-    if message.photo:
-        file_id = message.photo[-1].file_id
+    await message.answer(
+        texts.ASK_PRODUCT_TEXT,
+        reply_markup=kb_back_to_menu(),
+        parse_mode=PARSE_MODE,
+    )
 
-    # если прислали как файл (document)
-    elif message.document and (message.document.mime_type or "").startswith("image/"):
-        file_id = message.document.file_id
 
-    if not file_id:
+# ---------- PHOTO (document image/*) ----------
+@router.message(GenFlow.waiting_photo, F.document)
+async def on_photo_document(message: Message, state: FSMContext):
+    doc = message.document
+
+    if not (doc.mime_type or "").startswith("image/"):
         await message.answer(
             "❌ Пришли именно изображение товара (фото).\n"
             "Можно как фото или как файл, но это должно быть изображение.",
@@ -180,16 +187,25 @@ async def on_any_image(message: Message, state: FSMContext):
         )
         return
 
-    await state.update_data(photo_file_id=file_id)
+    await state.update_data(photo_file_id=doc.file_id)
     await state.set_state(GenFlow.waiting_product)
 
     await message.answer(
-        getattr(texts, "ASK_PRODUCT_TEXT", getattr(texts, "ASK_PRODUCT_INFO", "Напиши информацию о товаре одним сообщением.")),
+        texts.ASK_PRODUCT_TEXT,
         reply_markup=kb_back_to_menu(),
         parse_mode=PARSE_MODE,
     )
 
 
+# ---------- PHOTO (wrong) ----------
+@router.message(GenFlow.waiting_photo)
+async def on_photo_wrong(message: Message):
+    await message.answer(
+        "❌ Пришли фото товара.\n"
+        "Если отправляешь файлом — это должно быть изображение (image/*).",
+        reply_markup=kb_back_to_menu(),
+        parse_mode=PARSE_MODE,
+    )
 # ---------- PRODUCT INFO ----------
 @router.message(GenFlow.waiting_product, F.text)
 async def on_product_info(message: Message, state: FSMContext):
