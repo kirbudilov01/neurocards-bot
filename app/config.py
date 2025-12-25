@@ -1,1 +1,10 @@
+import os
 
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+SUPABASE_BUCKET_INPUTS = os.getenv("SUPABASE_BUCKET_INPUTS", "inputs")
+SUPABASE_BUCKET_OUTPUTS = os.getenv("SUPABASE_BUCKET_OUTPUTS", "outputs")
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "")  # опционально
