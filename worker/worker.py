@@ -13,7 +13,7 @@ from supabase import create_client
 
 from worker.kie_client import create_task_sora_i2v, poll_record_info
 from worker.openai_prompter import build_prompt_with_gpt
-from worker.prompt_templates import REELS_UGC_TEMPLATE_V1
+from worker.prompt_templates import TEMPLATES  # ✅ ВАЖНО
 
 
 def req(name: str) -> str:
@@ -37,13 +37,12 @@ def now_iso() -> str:
 
 def kb_result(kind: str = "reels") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔁 Сгенерировать ещё видео", callback_data=f"again:{kind}")],
+        [InlineKeyboardButton(text="🔁 Сгенерировать ещё", callback_data=f"again:{kind}")],
         [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")],
     ])
 
 
 def refund_credit(tg_user_id: int, amount: int = 1):
-    # RPC из твоего SQL шага
     supabase.rpc("refund_credit", {"p_tg_user_id": tg_user_id, "p_amount": amount}).execute()
 
 
@@ -70,7 +69,6 @@ def get_user_by_id(user_id: str):
 
 def normalize_storage_path(path: str) -> str:
     p = (path or "").strip().lstrip("/")
-    # убираем любые лишние inputs/ в начале (на случай старых записей)
     while p.startswith("inputs/"):
         p = p[len("inputs/"):]
     return p
@@ -132,6 +130,33 @@ async def download_bytes(url: str) -> bytes:
         return r.content
 
 
+def build_script_for_job(job: dict) -> str:
+    """
+    ✅ ВАЖНО: тут выбираем шаблон по job.template_id
+    """
+    template_id = (job.get("template_id") or "ugc").strip()
+    tpl = TEMPLATES.get(template_id) or TEMPLATES.get("ugc")
+
+    product_info = job.get("product_info") or {}
+    product_text = (product_info.get("text") or "").strip()
+    extra_wishes = job.get("extra_wishes")
+
+    # 🧑‍💻 Сам себе продюсер — GPT НЕ нужен
+    if tpl.get("type") == "direct":
+        user_prompt = (product_info.get("user_prompt") or "").strip()
+        if not user_prompt:
+            raise RuntimeError("self_template_missing_user_prompt")
+        return user_prompt
+
+    # GPT → сценарий/промпт
+    return build_prompt_with_gpt(
+        system=tpl["system"],
+        instructions=tpl["instructions"],
+        product_text=product_text,
+        extra_wishes=extra_wishes,
+    )
+
+
 async def main():
     print("WORKER: started main loop")
     bot = Bot(BOT_TOKEN)
@@ -156,17 +181,6 @@ async def main():
             update_job(job_id, {"status": "processing", "started_at": now_iso(), "attempts": attempts})
 
             kind = job.get("kind") or "reels"
-            if kind not in ("reels", "neurocard"):
-                # неизвестный тип — возвращаем кредит и падаем
-                refund_credit(tg_user_id, 1)
-                update_job(job_id, {"status": "failed", "error": "kind_not_supported", "finished_at": now_iso()})
-                await bot.send_message(
-                    tg_user_id,
-                    "❌ Неизвестный тип генерации. Баланс восстановлен ✅",
-                    reply_markup=kb_result(kind),
-                )
-                await asyncio.sleep(1)
-                continue
 
             input_path = job.get("input_photo_path")
             if not input_path:
@@ -175,15 +189,8 @@ async def main():
             image_url = get_public_input_url(input_path)
             print("IMAGE_URL:", image_url)
 
-            product_text = (job.get("product_info") or {}).get("text", "")
-            extra_wishes = job.get("extra_wishes")
-
-            script = build_prompt_with_gpt(
-                system=REELS_UGC_TEMPLATE_V1["system"],
-                instructions=REELS_UGC_TEMPLATE_V1["instructions"],
-                product_text=product_text,
-                extra_wishes=extra_wishes,
-            )
+            # ✅ ВОТ ТУТ теперь выбирается нужный шаблон
+            script = build_script_for_job(job)
 
             task_id = create_task_sora_i2v(prompt=script, image_url=image_url)
             if not task_id:
@@ -191,9 +198,11 @@ async def main():
 
             update_job(job_id, {"kie_task_id": task_id})
 
-            await bot.send_message(tg_user_id, "🎬 Генерация запущена. Пока вы ожидаете около 5 минут, можете заказать создание еще одного видео.")
+            await bot.send_message(
+                tg_user_id,
+                "🎬 Генерация запущена. Обычно это занимает около 5 минут.",
+            )
 
-            # poll_record_info блокирует (time.sleep), поэтому в thread
             info = await asyncio.to_thread(poll_record_info, task_id, 300, 10)
 
             print("\n==== KIE recordInfo raw ====")
@@ -206,8 +215,8 @@ async def main():
                 update_job(job_id, {"status": "failed", "error": fail_msg, "finished_at": now_iso()})
                 await bot.send_message(
                     tg_user_id,
-                    f"❌ Ошибка генерации. 1 кредит вернули наш баланс ✅\nПричина: {fail_msg}",
-                    reply_markup=kb_result("reels"),
+                    f"❌ Ошибка генерации. 1 кредит вернули на баланс ✅\nПричина: {fail_msg}",
+                    reply_markup=kb_result(kind),
                 )
                 await asyncio.sleep(1)
                 continue
@@ -219,7 +228,7 @@ async def main():
                 await bot.send_message(
                     tg_user_id,
                     "❌ Я дождался ответа KIE, но не нашёл ссылку на видео. Кредит вернул ✅",
-                    reply_markup=kb_result("reels"),
+                    reply_markup=kb_result(kind),
                 )
                 await asyncio.sleep(1)
                 continue
@@ -231,15 +240,15 @@ async def main():
                 update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": video_url})
                 await bot.send_message(
                     tg_user_id,
-                    f"✅ Ваше видео готово! Ссылка на скачивание:\n{video_url}",
-                    reply_markup=kb_result("reels"),
+                    f"✅ Видео готово! Ссылка:\n{video_url}",
+                    reply_markup=kb_result(kind),
                 )
             else:
                 await bot.send_video(
                     tg_user_id,
                     video=BufferedInputFile(data, filename="reels.mp4"),
-                    caption="✅ Ваше видео готово! Не забудьте поделиться этим ботом с друзьями, чтобы получить бесплатные кредиты.",
-                    reply_markup=kb_result("reels"),
+                    caption="✅ Видео готово!",
+                    reply_markup=kb_result(kind),
                 )
                 update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": video_url})
 
@@ -251,7 +260,11 @@ async def main():
                 pass
             update_job(job_id, {"status": "failed", "error": str(e), "finished_at": now_iso()})
             try:
-                await bot.send_message(tg_user_id, f"❌ Проиозошла ошибка генерации. 1 кредит вернулся на ваш баланс ✅\n{e}", reply_markup=kb_result("reels"))
+                await bot.send_message(
+                    tg_user_id,
+                    f"❌ Произошла ошибка генерации. 1 кредит вернулся на баланс ✅\n{e}",
+                    reply_markup=kb_result(job.get("kind") or "reels"),
+                )
             except Exception:
                 pass
 
