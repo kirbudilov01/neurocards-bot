@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from app.keyboards import kb_menu, kb_cabinet, kb_back_to_menu, kb_confirm
 from app import texts
 from app.db import get_or_create_user, supabase
-from app.services.generations import start_generation
+from app.services.generation import start_generation
 
 router = Router()
 
