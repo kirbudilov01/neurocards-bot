@@ -18,52 +18,60 @@ def kb_menu():
     ])
 
 
-# ========== TEMPLATE CHOICE ==========
+# ========== TEMPLATE ==========
 def kb_template():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✨ UGC блогер (шаблон #1)", callback_data="template_1")],
-        [InlineKeyboardButton(text="📎 Примеры шаблонов", url="https://example.com/templates")],
         [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
     ])
 
 
-# ========== CONFIRM GENERATION ==========
+# ========== CONFIRM ==========
 def kb_confirm():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🚀 Запустить (Стоимость: 1 кредит)", callback_data="confirm_generation")],
+        [InlineKeyboardButton(text="🚀 Запустить (1 кредит)", callback_data="confirm_generation")],
         [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")],
     ])
 
 
-# ========== RESULT (AFTER GENERATION) ==========
+# ========== AFTER GENERATION ==========
 def kb_result(kind: str = "reels"):
-    """
-    kind: reels | neurocard
-    """
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔁 Сгенерировать ещё видео", callback_data=f"again:{kind}")],
+        [InlineKeyboardButton(text="🔁 Сгенерировать ещё", callback_data=f"again:{kind}")],
         [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")],
     ])
 
 
-# ========== BACK ONLY ==========
+def kb_after_start(kind: str = "reels"):
+    again_cb = "make_reels" if kind == "reels" else "make_neurocard"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Ещё одно видео", callback_data=again_cb)],
+        [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
+    ])
+
+
+# ========== BACK ==========
 def kb_back_to_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")]
     ])
 
 
+# ========== TOP UP ==========
+def kb_topup():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="5 токенов — 390 ₽", callback_data="pay:5")],
+        [InlineKeyboardButton(text="10 токенов — 690 ₽", callback_data="pay:10")],
+        [InlineKeyboardButton(text="30 видео — 1 790 ₽", callback_data="pay:30")],
+        [InlineKeyboardButton(text="100 видео — 4 990 ₽", callback_data="pay:100")],
+        [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
+    ])
+
+
 # ========== CABINET ==========
 def kb_cabinet(support_url: str = "https://t.me/your_support"):
     return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Пополнить баланс", callback_data="topup")],
         [InlineKeyboardButton(text="🆘 Служба поддержки", url=support_url)],
         [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")],
-    ])
-
-def kb_after_start(kind: str = "reels"):
-    # kind: "reels" | "neurocard"
-    again_cb = "make_reels" if kind == "reels" else "make_neurocard"
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎬 Ещё одно видео", callback_data=again_cb)],
-        [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
     ])
