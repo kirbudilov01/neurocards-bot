@@ -1,3 +1,5 @@
+import time
+import traceback
 import asyncio
 import json
 import os
@@ -253,4 +255,9 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception:
+        print("WORKER_FATAL_ERROR:\n" + traceback.format_exc(), flush=True)
+        while True:
+            time.sleep(60)
