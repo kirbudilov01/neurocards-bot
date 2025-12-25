@@ -156,11 +156,15 @@ async def main():
             update_job(job_id, {"status": "processing", "started_at": now_iso(), "attempts": attempts})
 
             kind = job.get("kind") or "reels"
-            if kind != "reels":
-                # Пока только reels (следующим шагом подключим neurocard)
+            if kind not in ("reels", "neurocard"):
+                # неизвестный тип — возвращаем кредит и падаем
                 refund_credit(tg_user_id, 1)
-                update_job(job_id, {"status": "failed", "error": "kind_not_supported_yet", "finished_at": now_iso()})
-                await bot.send_message(tg_user_id, "Пока поддерживается только раздел 🎬 REELS. Ваш баланс восстановлен ✅", reply_markup=kb_result("reels"))
+                update_job(job_id, {"status": "failed", "error": "kind_not_supported", "finished_at": now_iso()})
+                await bot.send_message(
+                    tg_user_id,
+                    "❌ Неизвестный тип генерации. Баланс восстановлен ✅",
+                    reply_markup=kb_result("reels"),
+                )
                 await asyncio.sleep(1)
                 continue
 
