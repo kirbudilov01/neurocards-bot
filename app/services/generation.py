@@ -18,10 +18,8 @@ async def start_generation(
     photo_bytes = await download_photo_bytes(bot, photo_file_id)
 
     # 2) загрузить в storage
-    name = f"{tg_user_id}/{uuid.uuid4().hex}.jpg"
-
-    # ВАЖНО: path внутри bucket БЕЗ префикса "inputs/"
-    input_path = name
+    # ВАЖНО: путь внутри bucket БЕЗ "inputs/"
+    input_path = f"{tg_user_id}/{uuid.uuid4().hex}.jpg"
     upload_input_photo(input_path, photo_bytes)
 
     # 3) создать job
@@ -37,7 +35,19 @@ async def start_generation(
     # 4) списать кредит атомарно
     new_credits = consume_credit(tg_user_id, job["id"])
 
-    # 5) позиция в очереди (после постановки в jobs)
-    queue_pos = get_queue_position(job["id"])
+    # 5) позиция в очереди + сообщение пользователю (не ломает вызывающий код)
+    try:
+        pos = get_queue_position(job["id"])
+        await bot.send_message(
+            tg_user_id,
+            "✅ Заказ принят и поставлен в очередь.\n"
+            f"📌 Позиция: {pos}\n"
+            f"💳 Баланс: {new_credits} кредит(ов)\n"
+            "⏳ Обычно 3–5 минут на одну генерацию."
+        )
+    except Exception:
+        # если вдруг очередь не посчиталась — генерацию не ломаем
+        pass
 
-    return job["id"], new_credits, queue_pos
+    # ВОЗВРАЩАЕМ КАК РАНЬШЕ (2 значения), чтобы ничего не отвалилось
+    return job["id"], new_credits
