@@ -10,9 +10,8 @@ from app.keyboards import (
     kb_back_to_menu,
     kb_confirm,
     kb_no_credits,
-    kb_templates,  # важно: должна быть в keyboards.py
+    kb_templates,  # должна быть в keyboards.py
 )
-
 from app.db import get_or_create_user, supabase
 from app.services.generation import start_generation
 
@@ -158,46 +157,34 @@ async def make_neurocard(cb: CallbackQuery, state: FSMContext):
         parse_mode=PARSE_MODE,
     )
 
-# ---------- PHOTO (image) ----------
-@router.message(GenFlow.waiting_photo, F.photo)
-async def on_photo(message: Message, state: FSMContext):
-    photo = message.photo[-1]
-    await state.update_data(photo_file_id=photo.file_id)
-    await state.set_state(GenFlow.waiting_product)
 
-    await message.answer(
-        texts.ASK_PRODUCT_TEXT,
-        reply_markup=kb_back_to_menu(),
-        parse_mode=PARSE_MODE,
-    )
+# ---------- PHOTO (универсально: photo + document image/*) ----------
+@router.message(GenFlow.waiting_photo)
+async def on_any_image(message: Message, state: FSMContext):
+    file_id = None
 
+    # обычное фото
+    if message.photo:
+        file_id = message.photo[-1].file_id
 
-# ---------- PHOTO (document) ----------
-@router.message(GenFlow.waiting_photo, F.document)
-async def on_photo_document(message: Message, state: FSMContext):
-    doc = message.document
+    # если прислали как файл (document)
+    elif message.document and (message.document.mime_type or "").startswith("image/"):
+        file_id = message.document.file_id
 
-    if not doc.mime_type or not doc.mime_type.startswith("image/"):
+    if not file_id:
         await message.answer(
-            "❌ Пришли именно изображение (фото товара).",
+            "❌ Пришли именно изображение товара (фото).\n"
+            "Можно как фото или как файл, но это должно быть изображение.",
             reply_markup=kb_back_to_menu(),
+            parse_mode=PARSE_MODE,
         )
         return
 
-    await state.update_data(photo_file_id=doc.file_id)
+    await state.update_data(photo_file_id=file_id)
     await state.set_state(GenFlow.waiting_product)
 
     await message.answer(
-        texts.ASK_PRODUCT_TEXT,
-        reply_markup=kb_back_to_menu(),
-        parse_mode=PARSE_MODE,
-    )
-
-
-@router.message(GenFlow.waiting_photo)
-async def on_photo_wrong(message: Message):
-    await message.answer(
-        "Нужно именно фото товара (картинка). Пришли фото, пожалуйста 🙂",
+        getattr(texts, "ASK_PRODUCT_TEXT", getattr(texts, "ASK_PRODUCT_INFO", "Напиши информацию о товаре одним сообщением.")),
         reply_markup=kb_back_to_menu(),
         parse_mode=PARSE_MODE,
     )
@@ -343,3 +330,17 @@ async def cancel(cb: CallbackQuery, state: FSMContext):
     await cb.answer("Ок")
     await state.clear()
     await show_menu(cb.message, MENU_TEXT, kb_menu())
+
+
+# ===== DEBUG (временно). Смотри логи Render, чтобы понять что прилетает и какой state =====
+@router.message()
+async def _debug_any_message(message: Message, state: FSMContext):
+    st = await state.get_state()
+    kinds = []
+    if message.photo:
+        kinds.append("photo")
+    if message.document:
+        kinds.append(f"document({message.document.mime_type})")
+    if message.text:
+        kinds.append("text")
+    print("DEBUG_ANY:", {"state": st, "kinds": kinds})
