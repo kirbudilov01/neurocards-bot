@@ -60,14 +60,27 @@ async def again(cb: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "cabinet")
 async def cabinet(cb: CallbackQuery):
     await cb.answer()
-    get_or_create_user(cb.from_user.id, cb.from_user.username)
+    u = get_or_create_user(cb.from_user.id, cb.from_user.username)
+
     bal = _get_balance(cb.from_user.id)
+
+    username = u.get("username") or "-"
+    uid = u.get("tg_user_id") or cb.from_user.id
+
     await cb.message.answer(
-        f"👤 Личный кабинет\n\n💳 Баланс: {bal} кредит(ов)",
+        "👤 Личный кабинет\n\n"
+        f"🆔 ID: {uid}\n"
+        f"👤 Username: @{username}\n"
+        f"💳 Баланс: {bal} кредит(ов)\n\n"
+        "Если что-то сломалось — пиши в поддержку.",
         reply_markup=kb_cabinet(),
     )
-
-
+    
+@router.callback_query(F.data == "ref_soon")
+async def ref_soon(cb: CallbackQuery):
+    await cb.answer()
+    await cb.message.answer("🤝 Реферальная система будет чуть позже. Сейчас допиливаем MVP 🙂", reply_markup=kb_cabinet())
+    
 @router.callback_query(F.data == "balance")
 async def balance(cb: CallbackQuery):
     await cb.answer()
