@@ -64,7 +64,7 @@ async def start_generation(
     await bot.send_message(
         tg_user_id,
         started_tpl.format(credits=new_credits),
-        reply_markup=kb_started(kind),
+        reply_markup=kb_started(),
         parse_mode="HTML",
     )
 
