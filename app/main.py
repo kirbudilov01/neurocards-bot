@@ -1,7 +1,10 @@
 import os
 import asyncio
+import structlog
 from aiohttp import web
 
+from app.logging_config import setup_logging
+from app.sentry_config import setup_sentry
 from aiogram import Bot, Dispatcher
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiogram.fsm.storage.memory import MemoryStorage  # 🔥 КРИТИЧЕСКИ ВАЖНО
@@ -16,11 +19,12 @@ WEBHOOK_URL = f"{PUBLIC_BASE_URL.rstrip('/')}{WEBHOOK_PATH}"
 
 from app.config import BOT_TOKEN, WEBHOOK_SECRET_TOKEN
 
-async def on_startup(bot: Bot):
+async def on_startup(app):
     """
     Действия при запуске:
     - Устанавливаем webhook
     """
+    bot = app["bot"]
     await bot.set_webhook(
         WEBHOOK_URL,
         drop_pending_updates=True,
@@ -28,12 +32,13 @@ async def on_startup(bot: Bot):
     )
 
 
-async def on_shutdown(bot: Bot):
+async def on_shutdown(app):
     """
     Действия при выключении:
     - Удаляем webhook
     - Закрываем сессию
     """
+    bot = app["bot"]
     await bot.delete_webhook()
     await bot.session.close()
 
@@ -43,15 +48,15 @@ async def handle_healthz(request):
 
 
 async def main():
+    setup_logging()
+    setup_sentry()
+    log = structlog.get_logger()
+
     # 🔑 Бот
     bot = Bot(BOT_TOKEN)
 
     # ✅ FSM будет РАБОТАТЬ
     dp = Dispatcher(storage=MemoryStorage())
-
-    # 📞 Вешаем startup/shutdown обработчики
-    dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
 
     # 📦 Роутеры (порядок важен)
     dp.include_router(start.router)
@@ -60,10 +65,15 @@ async def main():
 
     # 🌐 Web app
     app = web.Application()
+    app["bot"] = bot
 
     # Health check endpoints
     app.router.add_get("/", handle_healthz)
     app.router.add_get("/healthz", handle_healthz)
+
+    # 📞 Вешаем startup/shutdown обработчики
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
 
     # Webhook endpoint
     SimpleRequestHandler(
@@ -81,7 +91,7 @@ async def main():
     site = web.TCPSite(runner, host="0.0.0.0", port=port)
     await site.start()
 
-    print("🚀 Webhook bot started", flush=True)
+    log.info("🚀 Webhook bot started")
 
     # держим процесс живым
     await asyncio.Event().wait()

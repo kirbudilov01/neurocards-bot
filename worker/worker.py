@@ -7,6 +7,8 @@ import re
 from datetime import datetime, timezone
 
 import httpx
+import structlog
+from app.logging_config import setup_logging
 from aiogram import Bot
 from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client
@@ -157,46 +159,65 @@ def build_script_for_job(job: dict) -> str:
     )
 
 
+from worker.config import WORKER_ID
+
 async def main():
-    print("WORKER: started main loop")
+    setup_logging()
+    log = structlog.get_logger(worker_id=WORKER_ID)
+    log.info("WORKER: started main loop")
     bot = Bot(BOT_TOKEN)
 
     while True:
-        job = fetch_next_queued_job()
+        try:
+            res = supabase.rpc("claim_next_job", {"p_worker_id": WORKER_ID}).execute()
+            job = res.data[0] if res.data else None
+        except Exception as e:
+            log.error("Failed to claim next job", exc_info=True)
+            await asyncio.sleep(5)
+            continue
+
         if not job:
             await asyncio.sleep(2)
             continue
 
         job_id = job["id"]
+        log = log.bind(job_id=job_id)
+
         user = get_user_by_id(job["user_id"])
         if not user:
+            log.error("user_not_found", job_id=job_id)
             update_job(job_id, {"status": "failed", "error": "user_not_found", "finished_at": now_iso()})
             await asyncio.sleep(1)
             continue
 
         tg_user_id = int(user["tg_user_id"])
+        log = log.bind(tg_user_id=tg_user_id)
 
         try:
             attempts = int(job.get("attempts") or 0) + 1
+            log.info(f"Processing job, attempt {attempts}", job_id=job_id)
             update_job(job_id, {"status": "processing", "started_at": now_iso(), "attempts": attempts})
 
             kind = job.get("kind") or "reels"
+            log = log.bind(kind=kind)
 
             input_path = job.get("input_photo_path")
             if not input_path:
                 raise RuntimeError("Missing input_photo_path")
 
             image_url = get_public_input_url(input_path)
-            print("IMAGE_URL:", image_url)
+            log.info("Image URL", image_url=image_url)
 
-            # ✅ ВОТ ТУТ теперь выбирается нужный шаблон
             script = build_script_for_job(job)
+            log.info("Built script for job", script=script)
 
             task_id = create_task_sora_i2v(prompt=script, image_url=image_url)
             if not task_id:
                 raise RuntimeError("KIE: could not extract task_id")
 
             update_job(job_id, {"kie_task_id": task_id})
+            log = log.bind(kie_task_id=task_id)
+            log.info("KIE task created")
 
             await bot.send_message(
                 tg_user_id,
@@ -204,14 +225,12 @@ async def main():
             )
 
             info = await asyncio.to_thread(poll_record_info, task_id, 300, 10)
-
-            print("\n==== KIE recordInfo raw ====")
-            print(json.dumps(info, ensure_ascii=False, indent=2))
-            print("==== /KIE recordInfo raw ====\n")
+            log.info("KIE record info received", kie_info=info)
 
             fail_msg = extract_fail_message(info)
             if fail_msg:
                 refund_credit(tg_user_id, 1)
+                log.error("KIE task failed", reason=fail_msg)
                 update_job(job_id, {"status": "failed", "error": fail_msg, "finished_at": now_iso()})
                 await bot.send_message(
                     tg_user_id,
@@ -224,6 +243,7 @@ async def main():
             video_url = find_video_url(info)
             if not video_url:
                 refund_credit(tg_user_id, 1)
+                log.error("No video URL found in KIE response")
                 update_job(job_id, {"status": "failed", "error": "no_video_url", "finished_at": now_iso()})
                 await bot.send_message(
                     tg_user_id,
@@ -233,10 +253,12 @@ async def main():
                 await asyncio.sleep(1)
                 continue
 
+            log.info("Downloading video", video_url=video_url)
             data = await download_bytes(video_url)
 
             max_bytes = 45 * 1024 * 1024
             if len(data) > max_bytes:
+                log.info("Video too large for Telegram, sending URL", size=len(data))
                 update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": video_url})
                 await bot.send_message(
                     tg_user_id,
@@ -244,6 +266,7 @@ async def main():
                     reply_markup=kb_result(kind),
                 )
             else:
+                log.info("Sending video to user", size=len(data))
                 await bot.send_video(
                     tg_user_id,
                     video=BufferedInputFile(data, filename="reels.mp4"),
@@ -251,30 +274,48 @@ async def main():
                     reply_markup=kb_result(kind),
                 )
                 update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": video_url})
+            log.info("Job completed successfully")
 
         except Exception as e:
-            print("WORKER_ERROR:", repr(e))
-            try:
-                refund_credit(tg_user_id, 1)
-            except Exception:
-                pass
-            update_job(job_id, {"status": "failed", "error": str(e), "finished_at": now_iso()})
-            try:
-                await bot.send_message(
-                    tg_user_id,
-                    f"❌ Произошла ошибка генерации. 1 кредит вернулся на баланс ✅\n{e}",
-                    reply_markup=kb_result(job.get("kind") or "reels"),
-                )
-            except Exception:
-                pass
+            log.error("WORKER_ERROR", exc_info=True)
+
+            # Retry policy
+            attempts = int(job.get("attempt_count") or 1)
+            if attempts < 3:
+                # Exponential backoff: 10s, 20s
+                backoff_seconds = 10 * (2 ** (attempts - 1))
+                log.info(f"Retrying job in {backoff_seconds}s", attempt=attempts)
+                update_job(job_id, {
+                    "status": "queued",
+                    "last_error": str(e),
+                    "worker_id": None,
+                })
+                await asyncio.sleep(backoff_seconds)
+            else:
+                log.error("Job failed after multiple retries", attempts=attempts)
+                update_job(job_id, {
+                    "status": "failed",
+                    "last_error": str(e),
+                    "failed_at": now_iso(),
+                })
+                try:
+                    await bot.send_message(
+                        tg_user_id,
+                        f"❌ Произошла ошибка генерации. 1 кредит вернулся на баланс ✅\n{e}",
+                        reply_markup=kb_result(job.get("kind") or "reels"),
+                    )
+                except Exception as send_exc:
+                    log.error("Failed to send error message to user", exc_info=True)
 
         await asyncio.sleep(1)
 
 
 if __name__ == "__main__":
+    setup_logging()
+    log = structlog.get_logger()
     try:
         asyncio.run(main())
     except Exception:
-        print("WORKER_FATAL_ERROR:\n" + traceback.format_exc(), flush=True)
+        log.error("WORKER_FATAL_ERROR", exc_info=True)
         while True:
             time.sleep(60)
