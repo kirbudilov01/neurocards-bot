@@ -6,13 +6,38 @@ from aiogram import Bot, Dispatcher
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiogram.fsm.storage.memory import MemoryStorage  # 🔥 КРИТИЧЕСКИ ВАЖНО
 
-from app.config import BOT_TOKEN
+from app.config import BOT_TOKEN, PUBLIC_BASE_URL
 from app.handlers import start, menu_and_flow, fallback
 
 
 WEBHOOK_PATH = "/telegram/webhook"
-PUBLIC_APP_URL = os.getenv("PUBLIC_APP_URL", "").rstrip("/")
-WEBHOOK_URL = f"{PUBLIC_APP_URL}{WEBHOOK_PATH}"
+WEBHOOK_URL = f"{PUBLIC_BASE_URL.rstrip('/')}{WEBHOOK_PATH}"
+
+
+from app.config import BOT_TOKEN, WEBHOOK_SECRET_TOKEN
+
+async def on_startup(bot: Bot):
+    """
+    Действия при запуске:
+    - Устанавливаем webhook
+    """
+    await bot.set_webhook(
+        WEBHOOK_URL,
+        drop_pending_updates=True,
+        secret_token=WEBHOOK_SECRET_TOKEN,
+    )
+
+
+async def on_shutdown(bot: Bot):
+    """
+    Действия при выключении:
+    - Удаляем webhook
+    """
+    await bot.delete_webhook()
+
+
+async def handle_healthz(request):
+    return web.Response(text="ok")
 
 
 async def main():
@@ -22,6 +47,10 @@ async def main():
     # ✅ FSM будет РАБОТАТЬ
     dp = Dispatcher(storage=MemoryStorage())
 
+    # 📞 Вешаем startup/shutdown обработчики
+    dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
+
     # 📦 Роутеры (порядок важен)
     dp.include_router(start.router)
     dp.include_router(menu_and_flow.router)
@@ -30,17 +59,18 @@ async def main():
     # 🌐 Web app
     app = web.Application()
 
+    # Health check endpoints
+    app.router.add_get("/", handle_healthz)
+    app.router.add_get("/healthz", handle_healthz)
+
     # Webhook endpoint
     SimpleRequestHandler(
         dispatcher=dp,
         bot=bot,
     ).register(app, path=WEBHOOK_PATH)
 
-    # aiogram v3 — ТОЛЬКО 2 аргумента
-    setup_application(app, dp)
-
-    # Устанавливаем webhook
-    await bot.set_webhook(WEBHOOK_URL)
+    # aiogram v3 — передаем всё, что нужно в хэндлеры, через kwargs
+    setup_application(app, dp, bot=bot)
 
     # 🚀 Запуск сервера
     port = int(os.getenv("PORT", "10000"))
@@ -52,10 +82,7 @@ async def main():
     print("🚀 Webhook bot started", flush=True)
 
     # держим процесс живым
-    try:
-        await asyncio.Event().wait()
-    finally:
-        await bot.session.close()
+    await asyncio.Event().wait()
 
 
 if __name__ == "__main__":
