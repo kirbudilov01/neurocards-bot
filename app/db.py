@@ -51,31 +51,42 @@ def get_user_balance(tg_user_id: int) -> int:
 
 
 # ---------------- JOBS ----------------
-def create_job(
+def get_job_by_idempotency_key(idempotency_key: str) -> Optional[Dict[str, Any]]:
+    """
+    Checks if a job with the given idempotency key already exists.
+    """
+    res = (
+        supabase.table("jobs")
+        .select("id")
+        .eq("idempotency_key", idempotency_key)
+        .limit(1)
+        .execute()
+    )
+    return res.data[0] if res.data else None
+
+
+def create_job_and_consume_credit(
     tg_user_id: int,
-    kind: str,  # "reels" | "neurocard"
+    idempotency_key: str,
+    kind: str,
     input_photo_path: str,
     product_info: Dict[str, Any],
     extra_wishes: str | None,
-    template_id: str = "ugc",  # ✅ ВАЖНО: совпадает с tpl:ugc/ad/creative/self
+    template_id: str = "ugc",
 ) -> Dict[str, Any]:
-    user = get_or_create_user(tg_user_id)
-
-    res = (
-        supabase.table("jobs")
-        .insert(
-            {
-                "user_id": user["id"],
-                "kind": kind,
-                "status": "queued",
-                "template_id": template_id,
-                "input_photo_path": input_photo_path,
-                "product_info": product_info,
-                "extra_wishes": extra_wishes,
-            }
-        )
-        .execute()
-    )
+    """
+    Calls the RPC function to create a job and consume a credit in a single transaction.
+    """
+    params = {
+        "p_tg_user_id": tg_user_id,
+        "p_idempotency_key": idempotency_key,
+        "p_kind": kind,
+        "p_input_photo_path": input_photo_path,
+        "p_product_info": product_info,
+        "p_extra_wishes": extra_wishes,
+        "p_template_id": template_id,
+    }
+    res = supabase.rpc("create_job_and_consume_credit", params).execute()
     return res.data[0]
 
 
@@ -118,15 +129,6 @@ def get_queue_position(job_id: str) -> int:
         .execute()
     )
     return (len(r.data) if r.data else 0) + 1
-
-
-# ---------------- CREDITS ----------------
-def consume_credit(tg_user_id: int, job_id: str) -> int:
-    """
-    RPC public.consume_credit(p_tg_user_id bigint, p_job_id uuid) -> new_credits
-    """
-    res = supabase.rpc("consume_credit", {"p_tg_user_id": tg_user_id, "p_job_id": job_id}).execute()
-    return int(res.data[0]["new_credits"])
 
 
 # ---------------- HELPERS ----------------

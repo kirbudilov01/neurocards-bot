@@ -303,6 +303,7 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
     job_id, _new_credits = await start_generation(
         bot=cb.bot,
         tg_user_id=cb.from_user.id,
+        idempotency_key=cb.id,
         photo_file_id=photo_file_id,
         kind=kind,
         product_info={"text": product_text, "user_prompt": user_prompt},
