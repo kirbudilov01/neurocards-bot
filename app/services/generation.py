@@ -4,41 +4,49 @@ from app import texts
 from app.keyboards import kb_no_credits, kb_started
 from app.services.tg_files import download_photo_bytes
 from app.services.storage import upload_input_photo
-from app.db import create_job, consume_credit, get_queue_position
+from app.db import get_job_by_idempotency_key, create_job_and_consume_credit, get_queue_position, get_user_balance
 
 
 async def start_generation(
     bot,
     tg_user_id: int,
+    idempotency_key: str,
     photo_file_id: str,
     kind: str,
     product_info: dict,
     extra_wishes: str | None,
     template_id: str,
 ):
-    # 1) скачать фото
+    # 1) Проверить, существует ли уже job с таким idempotency key
+    existing_job = await get_job_by_idempotency_key(idempotency_key)
+    if existing_job:
+        # Если job уже существует, вернуть его ID и текущий баланс пользователя
+        current_credits = await get_user_balance(tg_user_id)
+        return existing_job["id"], current_credits
+
+    # 2) скачать фото
     photo_bytes = await download_photo_bytes(bot, photo_file_id)
 
-    # 2) загрузить в storage
+    # 3) загрузить в storage
     # ВАЖНО: путь внутри bucket БЕЗ "inputs/"
     input_path = f"{tg_user_id}/{uuid.uuid4().hex}.jpg"
-    upload_input_photo(input_path, photo_bytes)
+    await upload_input_photo(input_path, photo_bytes)
 
-    # 3) создать job
-    job = create_job(
-        tg_user_id=tg_user_id,
-        kind=kind,
-        input_photo_path=input_path,
-        product_info=product_info,
-        extra_wishes=extra_wishes,
-        template_id=template_id,
-    )
-
-    # 4) списать кредит атомарно
+    # 4) создать job и списать кредит атомарно
     try:
-        new_credits = consume_credit(tg_user_id, job["id"])
+        result = await create_job_and_consume_credit(
+            tg_user_id=tg_user_id,
+            idempotency_key=idempotency_key,
+            kind=kind,
+            input_photo_path=input_path,
+            product_info=product_info,
+            extra_wishes=extra_wishes,
+            template_id=template_id,
+        )
+        job_id = result["job_id"]
+        new_credits = result["new_credits"]
     except Exception:
-        # если кредит списать не удалось (например, не хватает)
+        # если RPC упал (например, 'Not enough credits'), сообщим об этом
         await bot.send_message(
             tg_user_id,
             getattr(texts, "NO_CREDITS", "❌ Недостаточно кредитов. Пополни баланс в личном кабинете."),
@@ -48,14 +56,13 @@ async def start_generation(
         # чтобы вызывающий код не падал
         return None, None
 
-    # 5) (опционально) считаем позицию, но НЕ шлём отдельным сообщением
-    # оставим на будущее: можно дописать в текст, если захочешь
+    # 4) (опционально) считаем позицию, но НЕ шлём отдельным сообщением
     try:
-        _ = get_queue_position(job["id"])
+        _ = await get_queue_position(job_id)
     except Exception:
         pass
 
-    # 6) одно красивое сообщение “генерация запущена” + баланс + кнопки
+    # 5) одно красивое сообщение “генерация запущена” + баланс + кнопки
     started_tpl = getattr(
         texts,
         "GENERATION_STARTED",
@@ -68,4 +75,4 @@ async def start_generation(
         parse_mode="HTML",
     )
 
-    return job["id"], new_credits
+    return job_id, new_credits

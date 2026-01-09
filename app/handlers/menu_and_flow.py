@@ -35,23 +35,8 @@ async def show_menu(message, text, reply_markup):
         await message.answer(text, reply_markup=reply_markup, parse_mode=PARSE_MODE)
 
 
-def _get_balance(tg_user_id: int) -> int:
-    res = (
-        supabase.table("users")
-        .select("*")
-        .eq("tg_user_id", tg_user_id)
-        .limit(1)
-        .execute()
-    )
-    if not res.data:
-        return 0
-
-    row = res.data[0] or {}
-    if row.get("balance") is not None:
-        return int(row.get("balance") or 0)
-    if row.get("credits") is not None:
-        return int(row.get("credits") or 0)
-    return 0
+async def _get_balance(tg_user_id: int) -> int:
+    return await get_user_balance(tg_user_id)
 
 
 class GenFlow(StatesGroup):
@@ -66,7 +51,7 @@ class GenFlow(StatesGroup):
 async def on_continue(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
     await state.clear()
-    get_or_create_user(cb.from_user.id, cb.from_user.username)
+    await get_or_create_user(cb.from_user.id, cb.from_user.username)
     await show_menu(cb.message, MENU_TEXT, kb_menu())
 
 
@@ -87,8 +72,8 @@ async def again(cb: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "cabinet")
 async def cabinet(cb: CallbackQuery):
     await cb.answer()
-    get_or_create_user(cb.from_user.id, cb.from_user.username)
-    bal = _get_balance(cb.from_user.id)
+    await get_or_create_user(cb.from_user.id, cb.from_user.username)
+    bal = await _get_balance(cb.from_user.id)
 
     cabinet_tpl = getattr(
         texts,
@@ -234,7 +219,7 @@ async def on_user_prompt(message: Message, state: FSMContext):
     user_prompt = message.text.strip()
     await state.update_data(user_prompt=user_prompt)
 
-    credits = _get_balance(message.from_user.id)
+    credits = await _get_balance(message.from_user.id)
     confirm_tpl = getattr(
         texts,
         "CONFIRM_COST",
@@ -253,7 +238,7 @@ async def on_wishes(message: Message, state: FSMContext):
     extra_wishes = None if txt in {"-", "—"} or txt.lower() in {"нет", "no"} else txt
     await state.update_data(extra_wishes=extra_wishes)
 
-    credits = _get_balance(message.from_user.id)
+    credits = await _get_balance(message.from_user.id)
     confirm_tpl = getattr(
         texts,
         "CONFIRM_COST",
@@ -290,7 +275,7 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
         await state.clear()
         return
 
-    credits = _get_balance(cb.from_user.id)
+    credits = await _get_balance(cb.from_user.id)
     if credits < 1:
         await cb.message.answer(
             getattr(texts, "NO_CREDITS", "❌ Недостаточно кредитов. Пополни баланс в личном кабинете."),
@@ -303,6 +288,7 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
     job_id, _new_credits = await start_generation(
         bot=cb.bot,
         tg_user_id=cb.from_user.id,
+        idempotency_key=cb.id,
         photo_file_id=photo_file_id,
         kind=kind,
         product_info={"text": product_text, "user_prompt": user_prompt},
