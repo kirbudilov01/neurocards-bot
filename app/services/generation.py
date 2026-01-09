@@ -18,10 +18,10 @@ async def start_generation(
     template_id: str,
 ):
     # 1) Проверить, существует ли уже job с таким idempotency key
-    existing_job = get_job_by_idempotency_key(idempotency_key)
+    existing_job = await get_job_by_idempotency_key(idempotency_key)
     if existing_job:
         # Если job уже существует, вернуть его ID и текущий баланс пользователя
-        current_credits = get_user_balance(tg_user_id)
+        current_credits = await get_user_balance(tg_user_id)
         return existing_job["id"], current_credits
 
     # 2) скачать фото
@@ -30,11 +30,11 @@ async def start_generation(
     # 3) загрузить в storage
     # ВАЖНО: путь внутри bucket БЕЗ "inputs/"
     input_path = f"{tg_user_id}/{uuid.uuid4().hex}.jpg"
-    upload_input_photo(input_path, photo_bytes)
+    await upload_input_photo(input_path, photo_bytes)
 
     # 4) создать job и списать кредит атомарно
     try:
-        result = create_job_and_consume_credit(
+        result = await create_job_and_consume_credit(
             tg_user_id=tg_user_id,
             idempotency_key=idempotency_key,
             kind=kind,
@@ -58,7 +58,7 @@ async def start_generation(
 
     # 4) (опционально) считаем позицию, но НЕ шлём отдельным сообщением
     try:
-        _ = get_queue_position(job_id)
+        _ = await get_queue_position(job_id)
     except Exception:
         pass
 

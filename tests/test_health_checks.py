@@ -2,10 +2,12 @@
 import pytest
 from aiohttp.test_utils import AioHTTPTestCase, unittest_run_loop
 from aiohttp import web
-from app.main import handle_healthz
+from unittest.mock import patch
 
 class HealthCheckTestCase(AioHTTPTestCase):
-    async def get_application(self):
+    @patch('app.db.create_client')
+    async def get_application(self, mock_create_client):
+        from app.main import handle_healthz
         app = web.Application()
         app.router.add_get('/', handle_healthz)
         app.router.add_get('/healthz', handle_healthz)

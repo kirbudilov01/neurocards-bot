@@ -32,8 +32,10 @@ async def on_shutdown(bot: Bot):
     """
     Действия при выключении:
     - Удаляем webhook
+    - Закрываем сессию
     """
     await bot.delete_webhook()
+    await bot.session.close()
 
 
 async def handle_healthz(request):
