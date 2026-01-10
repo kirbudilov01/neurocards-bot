@@ -1,3 +1,4 @@
+import logging
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, FSInputFile
 from aiogram.fsm.state import State, StatesGroup
@@ -248,7 +249,11 @@ async def on_user_prompt(message: Message, state: FSMContext):
 async def on_wishes(message: Message, state: FSMContext):
     try:
         txt = message.text.strip()
-        extra_wishes = None if txt in {"-", "—"} or txt.lower() in {"нет", "no"} else txt
+        txt_lower = txt.lower()
+        if txt_lower in {"-", "—", "нет", "no"} or " нет" in f" {txt_lower} ":
+            extra_wishes = None
+        else:
+            extra_wishes = txt
         await state.update_data(extra_wishes=extra_wishes)
 
         credits = await safe_get_balance(message.from_user.id)
@@ -263,9 +268,12 @@ async def on_wishes(message: Message, state: FSMContext):
             parse_mode=PARSE_MODE,
         )
     except Exception as e:
-        logging.error(f"Error in on_wishes: {e}", exc_info=True)
+        logging.error(
+            f"Error in on_wishes for user {message.from_user.id} with text='{message.text}': {e}",
+            exc_info=True,
+        )
         await message.answer(
-            "⚠️ Ошибка, попробуй ещё раз",
+            "⚠️ Ошибка, попробуй ещё раз или отправь ‘-’",
             reply_markup=kb_back_to_menu(),
             parse_mode=PARSE_MODE,
         )
@@ -273,9 +281,12 @@ async def on_wishes(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "confirm_generation")
 async def confirm_generation(cb: CallbackQuery, state: FSMContext):
-    try:
-        await cb.answer("Запускаю генерацию 🚀")
+    await cb.answer()
+    await cb.message.answer(
+        "✅ Принял! Генерация запущена, это может занять 1–3 минуты. Я пришлю результат сюда."
+    )
 
+    try:
         data = await state.get_data()
         photo_file_id = data.get("photo_file_id")
         product_text = (data.get("product_text") or "").strip()
