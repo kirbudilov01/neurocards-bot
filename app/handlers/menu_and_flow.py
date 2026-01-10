@@ -1,3 +1,4 @@
+import logging
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, FSInputFile
 from aiogram.fsm.state import State, StatesGroup
@@ -280,9 +281,12 @@ async def on_wishes(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "confirm_generation")
 async def confirm_generation(cb: CallbackQuery, state: FSMContext):
-    try:
-        await cb.answer("Запускаю генерацию 🚀")
+    await cb.answer()
+    await cb.message.answer(
+        "✅ Принял! Генерация запущена, это может занять 1–3 минуты. Я пришлю результат сюда."
+    )
 
+    try:
         data = await state.get_data()
         photo_file_id = data.get("photo_file_id")
         product_text = (data.get("product_text") or "").strip()
