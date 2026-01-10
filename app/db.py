@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from functools import partial
 from typing import Any, Callable, Dict, Optional, TypeVar
 
@@ -8,10 +9,14 @@ from supabase import create_client, Client
 
 T = TypeVar("T")
 
+logger = logging.getLogger(__name__)
+
 
 async def run_blocking(func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
     """Runs a synchronous function in a separate thread to prevent blocking the event loop."""
     return await asyncio.to_thread(func, *args, **kwargs)
+
+
 from app.config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
@@ -68,6 +73,18 @@ async def get_user_balance(tg_user_id: int) -> int:
     if row.get("credits") is not None:
         return int(row.get("credits") or 0)
     return 0
+
+
+async def safe_get_balance(tg_user_id: int) -> int:
+    """
+    Safely retrieves the user's balance with a timeout and error handling.
+    Returns 0 if the query fails or times out.
+    """
+    try:
+        return await asyncio.wait_for(get_user_balance(tg_user_id), timeout=5.0)
+    except Exception:
+        logger.error(f"Failed to get balance for user {tg_user_id}", exc_info=True)
+        return 0
 
 
 # ---------------- JOBS ----------------

@@ -13,7 +13,7 @@ from app.keyboards import (
     kb_templates,
     kb_topup,     # ✅ ВАЖНО
 )
-from app.db import get_or_create_user, supabase
+from app.db import get_or_create_user, supabase, safe_get_balance
 from app.services.generation import start_generation
 
 router = Router()
@@ -33,10 +33,6 @@ async def show_menu(message, text, reply_markup):
         )
     except Exception:
         await message.answer(text, reply_markup=reply_markup, parse_mode=PARSE_MODE)
-
-
-async def _get_balance(tg_user_id: int) -> int:
-    return await get_user_balance(tg_user_id)
 
 
 class GenFlow(StatesGroup):
@@ -71,20 +67,28 @@ async def again(cb: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "cabinet")
 async def cabinet(cb: CallbackQuery):
-    await cb.answer()
-    await get_or_create_user(cb.from_user.id, cb.from_user.username)
-    bal = await _get_balance(cb.from_user.id)
+    try:
+        await cb.answer()
+        await get_or_create_user(cb.from_user.id, cb.from_user.username)
+        bal = await safe_get_balance(cb.from_user.id)
 
-    cabinet_tpl = getattr(
-        texts,
-        "CABINET",
-        "👤 <b>Личный кабинет</b>\n\n💳 Баланс: <b>{credits}</b>\n\nВыбери действие:",
-    )
-    await cb.message.answer(
-        cabinet_tpl.format(credits=bal),
-        reply_markup=kb_cabinet(),
-        parse_mode=PARSE_MODE,
-    )
+        cabinet_tpl = getattr(
+            texts,
+            "CABINET",
+            "👤 <b>Личный кабинет</b>\n\n💳 Баланс: <b>{credits}</b>\n\nВыбери действие:",
+        )
+        await cb.message.answer(
+            cabinet_tpl.format(credits=bal),
+            reply_markup=kb_cabinet(),
+            parse_mode=PARSE_MODE,
+        )
+    except Exception as e:
+        logging.error(f"Error in cabinet: {e}", exc_info=True)
+        await cb.message.answer(
+            "⚠️ Ошибка, попробуй ещё раз",
+            reply_markup=kb_back_to_menu(),
+            parse_mode=PARSE_MODE,
+        )
 
 
 @router.callback_query(F.data == "topup")
@@ -216,84 +220,108 @@ async def on_template(cb: CallbackQuery, state: FSMContext):
 
 @router.message(GenFlow.waiting_user_prompt, F.text)
 async def on_user_prompt(message: Message, state: FSMContext):
-    user_prompt = message.text.strip()
-    await state.update_data(user_prompt=user_prompt)
+    try:
+        user_prompt = message.text.strip()
+        await state.update_data(user_prompt=user_prompt)
 
-    credits = await _get_balance(message.from_user.id)
-    confirm_tpl = getattr(
-        texts,
-        "CONFIRM_COST",
-        "Генерация стоит <b>1 кредит</b>.\nТекущий баланс: <b>{credits}</b>\n\nЗапускаем?",
-    )
-    await message.answer(
-        confirm_tpl.format(credits=credits),
-        reply_markup=kb_confirm(),
-        parse_mode=PARSE_MODE,
-    )
+        credits = await safe_get_balance(message.from_user.id)
+        confirm_tpl = getattr(
+            texts,
+            "CONFIRM_COST",
+            "Генерация стоит <b>1 кредит</b>.\nТекущий баланс: <b>{credits}</b>\n\nЗапускаем?",
+        )
+        await message.answer(
+            confirm_tpl.format(credits=credits),
+            reply_markup=kb_confirm(),
+            parse_mode=PARSE_MODE,
+        )
+    except Exception as e:
+        logging.error(f"Error in on_user_prompt: {e}", exc_info=True)
+        await message.answer(
+            "⚠️ Ошибка, попробуй ещё раз",
+            reply_markup=kb_back_to_menu(),
+            parse_mode=PARSE_MODE,
+        )
 
 
 @router.message(GenFlow.waiting_wishes, F.text)
 async def on_wishes(message: Message, state: FSMContext):
-    txt = message.text.strip()
-    extra_wishes = None if txt in {"-", "—"} or txt.lower() in {"нет", "no"} else txt
-    await state.update_data(extra_wishes=extra_wishes)
+    try:
+        txt = message.text.strip()
+        extra_wishes = None if txt in {"-", "—"} or txt.lower() in {"нет", "no"} else txt
+        await state.update_data(extra_wishes=extra_wishes)
 
-    credits = await _get_balance(message.from_user.id)
-    confirm_tpl = getattr(
-        texts,
-        "CONFIRM_COST",
-        "Генерация стоит <b>1 кредит</b>.\nТекущий баланс: <b>{credits}</b>\n\nЗапускаем?",
-    )
-    await message.answer(
-        confirm_tpl.format(credits=credits),
-        reply_markup=kb_confirm(),
-        parse_mode=PARSE_MODE,
-    )
+        credits = await safe_get_balance(message.from_user.id)
+        confirm_tpl = getattr(
+            texts,
+            "CONFIRM_COST",
+            "Генерация стоит <b>1 кредит</b>.\nТекущий баланс: <b>{credits}</b>\n\nЗапускаем?",
+        )
+        await message.answer(
+            confirm_tpl.format(credits=credits),
+            reply_markup=kb_confirm(),
+            parse_mode=PARSE_MODE,
+        )
+    except Exception as e:
+        logging.error(f"Error in on_wishes: {e}", exc_info=True)
+        await message.answer(
+            "⚠️ Ошибка, попробуй ещё раз",
+            reply_markup=kb_back_to_menu(),
+            parse_mode=PARSE_MODE,
+        )
 
 
 @router.callback_query(F.data == "confirm_generation")
 async def confirm_generation(cb: CallbackQuery, state: FSMContext):
-    await cb.answer("Запускаю генерацию 🚀")
+    try:
+        await cb.answer("Запускаю генерацию 🚀")
 
-    data = await state.get_data()
-    photo_file_id = data.get("photo_file_id")
-    product_text = (data.get("product_text") or "").strip()
-    extra_wishes = data.get("extra_wishes")
-    kind = data.get("kind", "reels")
-    template_id = data.get("template_id") or "ugc"
-    user_prompt = data.get("user_prompt")
+        data = await state.get_data()
+        photo_file_id = data.get("photo_file_id")
+        product_text = (data.get("product_text") or "").strip()
+        extra_wishes = data.get("extra_wishes")
+        kind = data.get("kind", "reels")
+        template_id = data.get("template_id") or "ugc"
+        user_prompt = data.get("user_prompt")
 
-    if template_id not in {"ugc", "ad", "creative", "self"}:
-        template_id = "ugc"
+        if template_id not in {"ugc", "ad", "creative", "self"}:
+            template_id = "ugc"
 
-    if not photo_file_id or not product_text:
+        if not photo_file_id or not product_text:
+            await cb.message.answer(
+                "⚠️ Данных не хватает. Начни заново из меню.",
+                reply_markup=kb_back_to_menu(),
+                parse_mode=PARSE_MODE,
+            )
+            await state.clear()
+            return
+
+        credits = await safe_get_balance(cb.from_user.id)
+        if credits < 1:
+            await cb.message.answer(
+                getattr(texts, "NO_CREDITS", "❌ Недостаточно кредитов. Пополни баланс в личном кабинете."),
+                reply_markup=kb_no_credits(),
+                parse_mode=PARSE_MODE,
+            )
+            await state.clear()
+            return
+
+        job_id, _new_credits = await start_generation(
+            bot=cb.bot,
+            tg_user_id=cb.from_user.id,
+            idempotency_key=cb.id,
+            photo_file_id=photo_file_id,
+            kind=kind,
+            product_info={"text": product_text, "user_prompt": user_prompt},
+            extra_wishes=extra_wishes,
+            template_id=template_id,
+        )
+
+        await state.clear()
+    except Exception as e:
+        logging.error(f"Error in confirm_generation: {e}", exc_info=True)
         await cb.message.answer(
-            "⚠️ Данных не хватает. Начни заново из меню.",
+            "⚠️ Ошибка, попробуй ещё раз",
             reply_markup=kb_back_to_menu(),
             parse_mode=PARSE_MODE,
         )
-        await state.clear()
-        return
-
-    credits = await _get_balance(cb.from_user.id)
-    if credits < 1:
-        await cb.message.answer(
-            getattr(texts, "NO_CREDITS", "❌ Недостаточно кредитов. Пополни баланс в личном кабинете."),
-            reply_markup=kb_no_credits(),
-            parse_mode=PARSE_MODE,
-        )
-        await state.clear()
-        return
-
-    job_id, _new_credits = await start_generation(
-        bot=cb.bot,
-        tg_user_id=cb.from_user.id,
-        idempotency_key=cb.id,
-        photo_file_id=photo_file_id,
-        kind=kind,
-        product_info={"text": product_text, "user_prompt": user_prompt},
-        extra_wishes=extra_wishes,
-        template_id=template_id,
-    )
-
-    await state.clear()
