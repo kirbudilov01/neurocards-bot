@@ -4,7 +4,7 @@ from app import texts
 from app.keyboards import kb_no_credits, kb_started
 from app.services.tg_files import download_photo_bytes
 from app.services.storage import upload_input_photo
-from app.db import get_job_by_idempotency_key, create_job_and_consume_credit, get_queue_position, get_user_balance
+from app.db import get_job_by_idempotency_key, create_job_and_consume_credit, get_queue_position, safe_get_balance
 
 
 async def start_generation(
@@ -21,7 +21,7 @@ async def start_generation(
     existing_job = await get_job_by_idempotency_key(idempotency_key)
     if existing_job:
         # Если job уже существует, вернуть его ID и текущий баланс пользователя
-        current_credits = await get_user_balance(tg_user_id)
+        current_credits = await safe_get_balance(tg_user_id)
         return existing_job["id"], current_credits
 
     # 2) скачать фото

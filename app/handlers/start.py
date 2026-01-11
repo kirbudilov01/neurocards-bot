@@ -12,7 +12,7 @@ WELCOME_VIDEO_PATH = "assets/welcome.mp4"
 
 @router.message(CommandStart())
 async def start_handler(message: Message):
-    get_or_create_user(message.from_user.id, message.from_user.username)
+    await get_or_create_user(message.from_user.id, message.from_user.username)
 
     try:
         await message.answer_video(FSInputFile(WELCOME_VIDEO_PATH))
