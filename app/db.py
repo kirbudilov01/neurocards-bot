@@ -65,10 +65,9 @@ def get_user_balance(tg_user_id: int) -> int:
         .execute()
     )
     if not r.data:
-        logger.info(f"get_user_balance(tg_user_id={tg_user_id}): user not found, returning 0")
+        logger.warning(f"get_user_balance(tg_user_id={tg_user_id}): user not found, returning 0")
         return 0
     row = r.data[0] or {}
-    logger.info(f"get_user_balance(tg_user_id={tg_user_id}): found user row: {row}")
 
     balance = 0
     if row.get("balance") is not None:
@@ -76,7 +75,10 @@ def get_user_balance(tg_user_id: int) -> int:
     elif row.get("credits") is not None:
         balance = int(row.get("credits") or 0)
 
-    logger.info(f"get_user_balance(tg_user_id={tg_user_id}): returning balance={balance}")
+    logger.info(
+        f"get_user_balance(tg_user_id={tg_user_id}): "
+        f"user_row_id={row.get('id')}, credits={balance}"
+    )
     return balance
 
 
