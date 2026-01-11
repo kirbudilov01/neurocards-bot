@@ -12,11 +12,11 @@ from app.services.generation import start_generation
 @patch('app.services.generation.upload_input_photo')
 @patch('app.services.generation.get_job_by_idempotency_key')
 @patch('app.services.generation.create_job_and_consume_credit')
-@patch('app.services.generation.get_user_balance')
+@patch('app.services.generation.safe_get_balance')
 @patch('app.services.generation.get_queue_position')
 async def test_start_generation_idempotency_efficiency(
     mock_get_queue_position,
-    mock_get_user_balance,
+    mock_safe_get_balance,
     mock_create_job,
     mock_get_job,
     mock_upload_photo,
@@ -67,4 +67,4 @@ async def test_start_generation_idempotency_efficiency(
     mock_download_photo.assert_called_once()  # Still 1
     mock_upload_photo.assert_called_once()  # Still 1
     mock_create_job.assert_called_once()  # Still 1
-    mock_get_user_balance.assert_called_once_with(123)
+    mock_safe_get_balance.assert_called_once_with(123)

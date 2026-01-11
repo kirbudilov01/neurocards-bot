@@ -51,28 +51,33 @@ async def get_or_create_user(tg_user_id: int, username: Optional[str] = None) ->
     return ins.data[0]
 
 
-async def get_user_balance(tg_user_id: int) -> int:
+def get_user_balance(tg_user_id: int) -> int:
     """
     Поддерживаем оба поля:
     - users.balance
     - users.credits
     """
-    r = await run_blocking(
+    r = (
         supabase.table("users")
         .select("*")
         .eq("tg_user_id", tg_user_id)
         .limit(1)
-        .execute
+        .execute()
     )
     if not r.data:
+        logger.info(f"get_user_balance(tg_user_id={tg_user_id}): user not found, returning 0")
         return 0
     row = r.data[0] or {}
+    logger.info(f"get_user_balance(tg_user_id={tg_user_id}): found user row: {row}")
 
+    balance = 0
     if row.get("balance") is not None:
-        return int(row.get("balance") or 0)
-    if row.get("credits") is not None:
-        return int(row.get("credits") or 0)
-    return 0
+        balance = int(row.get("balance") or 0)
+    elif row.get("credits") is not None:
+        balance = int(row.get("credits") or 0)
+
+    logger.info(f"get_user_balance(tg_user_id={tg_user_id}): returning balance={balance}")
+    return balance
 
 
 async def safe_get_balance(tg_user_id: int) -> int:
@@ -81,7 +86,7 @@ async def safe_get_balance(tg_user_id: int) -> int:
     Returns 0 if the query fails or times out.
     """
     try:
-        return await asyncio.wait_for(get_user_balance(tg_user_id), timeout=5.0)
+        return await asyncio.wait_for(run_blocking(get_user_balance, tg_user_id), timeout=5.0)
     except Exception:
         logger.error(f"Failed to get balance for user {tg_user_id}", exc_info=True)
         return 0
