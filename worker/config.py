@@ -9,9 +9,13 @@ def req(name: str) -> str:
 # Telegram
 BOT_TOKEN = req("BOT_TOKEN")
 
-# Supabase
-SUPABASE_URL = req("SUPABASE_URL")
-SUPABASE_SERVICE_ROLE_KEY = req("SUPABASE_SERVICE_ROLE_KEY")
+# Database configuration
+DATABASE_TYPE = os.getenv("DATABASE_TYPE", "supabase").lower()  # supabase или postgres
+DATABASE_URL = os.getenv("DATABASE_URL", "")  # для прямого PostgreSQL
+
+# Supabase (для обратной совместимости)
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_BUCKET_INPUTS = os.getenv("SUPABASE_BUCKET_INPUTS", "inputs")
 SUPABASE_BUCKET_OUTPUTS = os.getenv("SUPABASE_BUCKET_OUTPUTS", "outputs")
 

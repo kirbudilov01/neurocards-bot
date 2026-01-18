@@ -15,8 +15,7 @@ from app.keyboards import (
     kb_topup,     # ✅ ВАЖНО
     kb_video_count,  # ✅ Новая клавиатура
 )
-from app.db_adapter import get_or_create_user
-from app.db import safe_get_balance  # Временно оставим старую функцию
+from app.db_adapter import get_or_create_user, safe_get_balance
 from app.services.generation import start_generation
 
 router = Router()

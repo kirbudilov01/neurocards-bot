@@ -369,3 +369,135 @@ async def fetch_next_queued_job() -> Optional[Dict[str, Any]]:
             .execute
         )
         return job
+
+
+# ---------------- ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ (для generation.py и др.) ----------------
+
+async def get_job_by_idempotency_key(idempotency_key: str) -> Optional[Dict[str, Any]]:
+    """Проверяет существование задания по idempotency ключу"""
+    
+    if DATABASE_TYPE == "postgres":
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM jobs WHERE idempotency_key = $1",
+                idempotency_key
+            )
+            return dict(row) if row else None
+    
+    else:
+        res = await run_blocking(
+            supabase.table("jobs")
+            .select("*")
+            .eq("idempotency_key", idempotency_key)
+            .limit(1)
+            .execute
+        )
+        return res.data[0] if res.data else None
+
+
+async def get_queue_position(job_id: int) -> int:
+    """Возвращает позицию задания в очереди"""
+    
+    if DATABASE_TYPE == "postgres":
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            # Получаем created_at задания
+            job_row = await conn.fetchrow(
+                "SELECT created_at FROM jobs WHERE id = $1",
+                job_id
+            )
+            if not job_row:
+                return 1
+            
+            created_at = job_row["created_at"]
+            
+            # Считаем сколько queued/processing заданий создано раньше
+            count = await conn.fetchval(
+                """
+                SELECT COUNT(*) FROM jobs
+                WHERE status IN ('queued', 'processing')
+                AND created_at < $1
+                """,
+                created_at
+            )
+            return (count or 0) + 1
+    
+    else:
+        j = await run_blocking(
+            supabase.table("jobs")
+            .select("created_at")
+            .eq("id", job_id)
+            .limit(1)
+            .execute
+        )
+        if not j.data:
+            return 1
+        created_at = j.data[0]["created_at"]
+        
+        r = await run_blocking(
+            supabase.table("jobs")
+            .select("id")
+            .in_("status", ["queued", "processing"])
+            .lt("created_at", created_at)
+            .execute
+        )
+        return (len(r.data) if r.data else 0) + 1
+
+
+async def safe_get_balance(tg_user_id: int) -> int:
+    """
+    Безопасно получает баланс пользователя (с timeout и обработкой ошибок)
+    Возвращает 0 при ошибке
+    """
+    try:
+        user = await asyncio.wait_for(
+            get_user_by_tg_id(tg_user_id),
+            timeout=5.0
+        )
+        if user:
+            # Поддерживаем оба названия поля для совместимости
+            return user.get("credits") or user.get("balance", 0)
+        return 0
+    except Exception as e:
+        logger.error(f"Failed to get balance for user {tg_user_id}: {e}")
+        return 0
+
+
+async def list_last_jobs(tg_user_id: int, limit: int = 5) -> list[Dict[str, Any]]:
+    """Возвращает последние задания пользователя"""
+    
+    if DATABASE_TYPE == "postgres":
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, template_type as kind, status, created_at, 
+                       result_video_path as output_url, error_message as error,
+                       template_type as template_id
+                FROM jobs
+                WHERE tg_user_id = $1
+                ORDER BY created_at DESC
+                LIMIT $2
+                """,
+                tg_user_id, limit
+            )
+            return [dict(row) for row in rows]
+    
+    else:
+        # Для Supabase нужно сначала получить user_id
+        user = await get_user_by_tg_id(tg_user_id)
+        if not user:
+            return []
+        
+        user_id = user.get("id")
+        
+        res = await run_blocking(
+            supabase.table("jobs")
+            .select("id,kind,status,created_at,output_url,error,template_id")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute
+        )
+        return res.data or []
