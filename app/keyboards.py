@@ -22,16 +22,27 @@ def kb_templates():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✨ UGC блогер", callback_data="tpl:ugc")],
         [InlineKeyboardButton(text="🎥 Рекламное видео (b-roll)", callback_data="tpl:ad")],
-        [InlineKeyboardButton(text="😈 Креативный продюсер", callback_data="tpl:creative")],
         [InlineKeyboardButton(text="🧑‍💻 Сам себе продюсер", callback_data="tpl:self")],
         [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
     ])
 
 
-# ========== CONFIRM ==========
-def kb_confirm():
+# ========== VIDEO COUNT ==========
+def kb_video_count():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🚀 Запустить (1 кредит)", callback_data="confirm_generation")],
+        [InlineKeyboardButton(text="1️⃣ 1 видео (1 кредит)", callback_data="count:1")],
+        [InlineKeyboardButton(text="3️⃣ 3 видео (3 кредита)", callback_data="count:3")],
+        [InlineKeyboardButton(text="5️⃣ 5 видео (5 кредитов)", callback_data="count:5")],
+        [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")],
+    ])
+
+
+# ========== CONFIRM ==========
+def kb_confirm(count: int = 1):
+    cost = count
+    text = f"🚀 Запустить ({cost} {'кредит' if cost == 1 else 'кредита' if cost < 5 else 'кредитов'})"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=text, callback_data="confirm_generation")],
         [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")],
     ])
 

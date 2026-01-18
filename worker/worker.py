@@ -264,7 +264,10 @@ async def main():
 
             await bot.send_message(
                 tg_user_id,
-                "🎬 Генерация запущена. Обычно это занимает около 5 минут.",
+                "🎬 Генерация запущена.\n\n"
+                "⏱ Обычно это занимает от <b>1 до 30 минут</b> в зависимости от загруженности нейросети Sora 2.\n\n"
+                "Ожидайте, я пришлю результат сюда.",
+                parse_mode="HTML",
             )
             
             logger.info(f"⏳ Polling KIE for task {task_id}...")
@@ -280,10 +283,34 @@ async def main():
                 logger.warning(f"❌ KIE generation failed: {fail_msg}")
                 refund_credit(tg_user_id, 1)
                 update_job(job_id, {"status": "failed", "error": fail_msg, "finished_at": now_iso()})
+                
+                # Определяем тип ошибки
+                fail_msg_lower = fail_msg.lower()
+                is_policy_violation = any(word in fail_msg_lower for word in [
+                    "policy", "content", "inappropriate", "violation", "rule", "guideline",
+                    "safety", "prohibited", "restricted", "denied", "rejected"
+                ])
+                
+                if is_policy_violation:
+                    error_text = (
+                        "⚠️ <b>Вы нарушили правила SORA 2</b>\n\n"
+                        "Внимательно изучите требования к:\n"
+                        "• фото (чаще всего проблема в фото)\n"
+                        "• промпту\n\n"
+                        "1 кредит вернули на баланс ✅"
+                    )
+                else:
+                    error_text = (
+                        "❌ <b>Произошла ошибка генерации</b>\n\n"
+                        "Обратитесь в службу поддержки: @kirbudilov\n\n"
+                        "1 кредит вернули на баланс ✅"
+                    )
+                
                 await bot.send_message(
                     tg_user_id,
-                    f"❌ Ошибка генерации. 1 кредит вернули на баланс ✅\nПричина: {fail_msg}",
+                    error_text,
                     reply_markup=kb_result(kind),
+                    parse_mode="HTML",
                 )
                 await asyncio.sleep(1)
                 continue

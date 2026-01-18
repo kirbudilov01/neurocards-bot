@@ -13,6 +13,7 @@ from app.keyboards import (
     kb_no_credits,
     kb_templates,
     kb_topup,     # ✅ ВАЖНО
+    kb_video_count,  # ✅ Новая клавиатура
 )
 from app.db import get_or_create_user, supabase, safe_get_balance
 from app.services.generation import start_generation
@@ -189,10 +190,10 @@ async def on_product_wrong(message: Message):
 @router.callback_query(GenFlow.waiting_template, F.data.startswith("tpl:"))
 async def on_template(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
-    template_id = cb.data.split(":", 1)[1]  # ugc/ad/creative/self
+    template_id = cb.data.split(":", 1)[1]  # ugc/ad/self
 
-    # ✅ страхуемся от мусора
-    if template_id not in {"ugc", "ad", "creative", "self"}:
+    # ✅ страхуемся от мусора и удаленного creative
+    if template_id not in {"ugc", "ad", "self"}:
         template_id = "ugc"
 
     await state.update_data(template_id=template_id)
@@ -224,16 +225,12 @@ async def on_user_prompt(message: Message, state: FSMContext):
     try:
         user_prompt = message.text.strip()
         await state.update_data(user_prompt=user_prompt)
+        await state.set_state(GenFlow.waiting_video_count)
 
-        credits = await safe_get_balance(message.from_user.id)
-        confirm_tpl = getattr(
-            texts,
-            "CONFIRM_COST",
-            "Генерация стоит <b>1 кредит</b>.\nТекущий баланс: <b>{credits}</b>\n\nЗапускаем?",
-        )
         await message.answer(
-            confirm_tpl.format(credits=credits),
-            reply_markup=kb_confirm(),
+            "🎬 <b>Сколько видео хочешь сгенерировать?</b>\n\n"
+            "Каждое видео = 1 кредит",
+            reply_markup=kb_video_count(),
             parse_mode=PARSE_MODE,
         )
     except Exception as e:
@@ -278,13 +275,41 @@ async def on_wishes(message: Message, state: FSMContext):
             parse_mode=PARSE_MODE,
         )
 
+# Новый обработчик выбора количества видео
+@router.callback_query(GenFlow.waiting_video_count, F.data.startswith("count:"))
+async def on_video_count(cb: CallbackQuery, state: FSMContext):
+    await cb.answer()
+    count = int(cb.data.split(":", 1)[1])  # 1, 3, or 5
+    await state.update_data(video_count=count)
+
+    credits = await safe_get_balance(cb.from_user.id)
+    if credits < count:
+        await cb.message.answer(
+            f"❌ Недостаточно кредитов.\n\nНужно: <b>{count}</b>\nУ вас: <b>{credits}</b>\n\nПополните баланс.",
+            reply_markup=kb_no_credits(),
+            parse_mode=PARSE_MODE,
+        )
+        await state.clear()
+        return
+
+    confirm_tpl = (
+        f"🎬 <b>Готовы запустить генерацию?</b>\n\n"
+        f"Количество видео: <b>{count}</b>\n"
+        f"Стоимость: <b>{count} {'кредит' if count == 1 else 'кредита' if count < 5 else 'кредитов'}</b>\n"
+        f"Текущий баланс: <b>{credits}</b>\n\n"
+        f"⏱ Генерация займёт от <b>1 до 30 минут</b> в зависимости от загруженности нейросети Sora 2.\n\n"
+        f"Запускаем?"
+    )
+    
+    await cb.message.answer(
+        confirm_tpl,
+        reply_markup=kb_confirm(count),
+        parse_mode=PARSE_MODE,
+    )
 
 @router.callback_query(F.data == "confirm_generation")
 async def confirm_generation(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
-    await cb.message.answer(
-        "✅ Принял! Генерация запущена, это может занять 1–3 минуты. Я пришлю результат сюда."
-    )
 
     try:
         data = await state.get_data()
@@ -294,8 +319,9 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
         kind = data.get("kind", "reels")
         template_id = data.get("template_id") or "ugc"
         user_prompt = data.get("user_prompt")
+        video_count = data.get("video_count", 1)
 
-        if template_id not in {"ugc", "ad", "creative", "self"}:
+        if template_id not in {"ugc", "ad", "self"}:
             template_id = "ugc"
 
         if not photo_file_id or not product_text:
@@ -308,25 +334,39 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
             return
 
         credits = await safe_get_balance(cb.from_user.id)
-        if credits < 1:
+        if credits < video_count:
             await cb.message.answer(
-                getattr(texts, "NO_CREDITS", "❌ Недостаточно кредитов. Пополни баланс в личном кабинете."),
+                f"❌ Недостаточно кредитов.\n\nНужно: <b>{video_count}</b>\nУ вас: <b>{credits}</b>",
                 reply_markup=kb_no_credits(),
                 parse_mode=PARSE_MODE,
             )
             await state.clear()
             return
 
-        job_id, _new_credits = await start_generation(
-            bot=cb.bot,
-            tg_user_id=cb.from_user.id,
-            idempotency_key=cb.id,
-            photo_file_id=photo_file_id,
-            kind=kind,
-            product_info={"text": product_text, "user_prompt": user_prompt},
-            extra_wishes=extra_wishes,
-            template_id=template_id,
+        # Отправляем сразу уведомление о начале генерации
+        await cb.message.answer(
+            f"✅ <b>Принял!</b>\n\n"
+            f"🎬 Генерация <b>{video_count} {'видео' if video_count == 1 else 'видео'}</b> запущена!\n\n"
+            f"⏱ <b>Ожидайте</b> — это может занять от 1 до 30 минут в зависимости от загруженности Sora 2.\n\n"
+            f"Я пришлю результаты сюда по мере готовности.",
+            parse_mode=PARSE_MODE,
         )
+
+        # Запускаем генерацию для каждого видео
+        for i in range(video_count):
+            # Уникальный idempotency_key для каждого видео
+            idempotency_key = f"{cb.id}_{i}"
+            
+            job_id, _new_credits = await start_generation(
+                bot=cb.bot,
+                tg_user_id=cb.from_user.id,
+                idempotency_key=idempotency_key,
+                photo_file_id=photo_file_id,
+                kind=kind,
+                product_info={"text": product_text, "user_prompt": user_prompt},
+                extra_wishes=extra_wishes,
+                template_id=template_id,
+            )
 
         await state.clear()
     except Exception as e:
