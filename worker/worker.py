@@ -8,12 +8,20 @@ import logging
 import sys
 import signal
 from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 from aiogram import Bot
 from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton
-from supabase import create_client
 
+# Добавляем корень проекта в sys.path для импорта app модулей
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from app.db_adapter import (
+    init_db_pool, close_db_pool, fetch_next_queued_job,
+    update_job, refund_credit, get_user_by_tg_id
+)
+from app.services.storage_factory import get_storage
 from worker.kie_client import create_task_sora_i2v, poll_record_info
 from worker.openai_prompter import build_prompt_with_gpt
 from worker.prompt_templates import TEMPLATES  # ✅ ВАЖНО
@@ -47,11 +55,6 @@ def req(name: str) -> str:
 
 
 BOT_TOKEN = req("BOT_TOKEN")
-SUPABASE_URL = req("SUPABASE_URL").rstrip("/") + "/"
-SUPABASE_SERVICE_ROLE_KEY = req("SUPABASE_SERVICE_ROLE_KEY")
-INPUTS_BUCKET = (os.getenv("SUPABASE_BUCKET_INPUTS") or "inputs").strip()
-
-supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 
 def now_iso() -> str:
@@ -65,60 +68,19 @@ def kb_result(kind: str = "reels") -> InlineKeyboardMarkup:
     ])
 
 
-def refund_credit(tg_user_id: int, amount: int = 1):
+async def get_public_input_url(input_path: str) -> str:
+    """Получить публичный URL для input файла через storage_factory"""
     try:
-        supabase.rpc("refund_credit", {"p_tg_user_id": tg_user_id, "p_amount": amount}).execute()
-        logger.info(f"✅ Refunded {amount} credit(s) to user {tg_user_id}")
+        storage = get_storage()
+        # Normalize path
+        rel = (input_path or "").strip().lstrip("/")
+        while rel.startswith("inputs/"):
+            rel = rel[len("inputs/"):]
+        
+        return await storage.get_public_url("inputs", rel)
     except Exception as e:
-        logger.error(f"❌ Failed to refund credit to user {tg_user_id}: {e}", exc_info=True)
+        logger.error(f"❌ Failed to get public URL for {input_path}: {e}")
         raise
-
-
-def fetch_next_queued_job():
-    try:
-        res = (
-            supabase.table("jobs")
-            .select("*")
-            .eq("status", "queued")
-            .order("created_at", desc=False)
-            .limit(1)
-            .execute()
-        )
-        if res.data:
-            logger.info(f"📦 Found queued job: {res.data[0]['id']}")
-        return res.data[0] if res.data else None
-    except Exception as e:
-        logger.error(f"❌ Error fetching next job: {e}", exc_info=True)
-        return None
-
-
-def update_job(job_id: str, patch: dict):
-    try:
-        supabase.table("jobs").update(patch).eq("id", job_id).execute()
-        logger.info(f"✅ Updated job {job_id}: {patch}")
-    except Exception as e:
-        logger.error(f"❌ Failed to update job {job_id}: {e}", exc_info=True)
-        raise
-
-
-def get_user_by_id(user_id: str):
-    res = supabase.table("users").select("*").eq("id", user_id).limit(1).execute()
-    return res.data[0] if res.data else None
-
-
-def normalize_storage_path(path: str) -> str:
-    p = (path or "").strip().lstrip("/")
-    while p.startswith("inputs/"):
-        p = p[len("inputs/"):]
-    return p
-
-
-def get_public_input_url(input_path: str) -> str:
-    rel = normalize_storage_path(input_path)
-    pub = supabase.storage.from_(INPUTS_BUCKET).get_public_url(rel)
-    if isinstance(pub, dict):
-        return pub.get("publicUrl") or pub.get("public_url") or str(pub)
-    return str(pub)
 
 
 def extract_fail_message(info: dict) -> str | None:
@@ -205,185 +167,193 @@ async def main():
     
     logger.info("🚀 WORKER: started main loop")
     
+    # Инициализируем database pool
+    try:
+        await init_db_pool()
+        logger.info("✅ Database pool initialized")
+    except Exception as e:
+        logger.critical(f"❌ Failed to initialize database pool: {e}")
+        raise
+    
     # Проверяем наличие критичных переменных
     try:
         bot = Bot(BOT_TOKEN)
         logger.info("✅ Bot initialized successfully")
     except Exception as e:
         logger.critical(f"❌ Failed to initialize bot: {e}")
+        await close_db_pool()
         raise
     
     consecutive_errors = 0
     max_consecutive_errors = 5
 
-    while not shutdown_flag:
-        try:
-            job = fetch_next_queued_job()
-            if not job:
-                await asyncio.sleep(2)
-                continue
+    try:
+        while not shutdown_flag:
+            try:
+                job = await fetch_next_queued_job()
+                if not job:
+                    await asyncio.sleep(2)
+                    continue
 
-            # Сбрасываем счетчик ошибок при успешном получении задачи
-            consecutive_errors = 0
-            
-            job_id = job["id"]
-            logger.info(f"💼 Processing job {job_id}")
-            
-            user = get_user_by_id(job["user_id"])
-            if not user:
-                logger.warning(f"⚠️ User not found for job {job_id}")
-                update_job(job_id, {"status": "failed", "error": "user_not_found", "finished_at": now_iso()})
-                await asyncio.sleep(1)
-                continue
-
-            tg_user_id = int(user["tg_user_id"])
-
-            attempts = int(job.get("attempts") or 0) + 1
-            update_job(job_id, {"status": "processing", "started_at": now_iso(), "attempts": attempts})
-            logger.info(f"🔄 Job {job_id} attempt {attempts}")
-
-            kind = job.get("kind") or "reels"
-
-            input_path = job.get("input_photo_path")
-            if not input_path:
-                raise RuntimeError("Missing input_photo_path")
-
-            image_url = get_public_input_url(input_path)
-            logger.info(f"🖼️ IMAGE_URL: {image_url}")
-
-            # ✅ ВОТ ТУТ теперь выбирается нужный шаблон
-            script = build_script_for_job(job)
-            logger.info(f"📝 Generated script (first 200 chars): {script[:200]}...")
-
-            task_id = create_task_sora_i2v(prompt=script, image_url=image_url)
-            if not task_id:
-                raise RuntimeError("KIE: could not extract task_id")
-            
-            logger.info(f"✅ KIE task created: {task_id}")
-            update_job(job_id, {"kie_task_id": task_id})
-
-            await bot.send_message(
-                tg_user_id,
-                "🎬 Генерация запущена.\n\n"
-                "⏱ Обычно это занимает от <b>1 до 30 минут</b> в зависимости от загруженности нейросети Sora 2.\n\n"
-                "Ожидайте, я пришлю результат сюда.",
-                parse_mode="HTML",
-            )
-            
-            logger.info(f"⏳ Polling KIE for task {task_id}...")
-            # Увеличим таймаут до 6 минут (360 сек) для большей надежности
-            info = await asyncio.to_thread(poll_record_info, task_id, 360, 10)
-
-            logger.info("\n==== KIE recordInfo raw ====")
-            logger.info(json.dumps(info, ensure_ascii=False, indent=2))
-            logger.info("==== /KIE recordInfo raw ====\n")
-
-            fail_msg = extract_fail_message(info)
-            if fail_msg:
-                logger.warning(f"❌ KIE generation failed: {fail_msg}")
-                refund_credit(tg_user_id, 1)
-                update_job(job_id, {"status": "failed", "error": fail_msg, "finished_at": now_iso()})
+                # Сбрасываем счетчик ошибок при успешном получении задачи
+                consecutive_errors = 0
                 
-                # Определяем тип ошибки
-                fail_msg_lower = fail_msg.lower()
-                is_policy_violation = any(word in fail_msg_lower for word in [
-                    "policy", "content", "inappropriate", "violation", "rule", "guideline",
-                    "safety", "prohibited", "restricted", "denied", "rejected"
-                ])
+                job_id = job["id"]
+                logger.info(f"💼 Processing job {job_id}")
                 
-                if is_policy_violation:
-                    error_text = (
-                        "⚠️ <b>Вы нарушили правила SORA 2</b>\n\n"
-                        "Внимательно изучите требования к:\n"
-                        "• фото (чаще всего проблема в фото)\n"
-                        "• промпту\n\n"
-                        "1 кредит вернули на баланс ✅"
-                    )
-                else:
-                    error_text = (
-                        "❌ <b>Произошла ошибка генерации</b>\n\n"
-                        "Обратитесь в службу поддержки: @kirbudilov\n\n"
-                        "1 кредит вернули на баланс ✅"
-                    )
+                # Получаем tg_user_id напрямую из job
+                tg_user_id = int(job["tg_user_id"])
+
+                attempts = int(job.get("attempts") or 0) + 1
+                await update_job(job_id, {"status": "processing", "started_at": now_iso(), "attempts": attempts})
+                logger.info(f"🔄 Job {job_id} attempt {attempts}")
+
+                kind = job.get("kind") or "reels"
+
+                input_path = job.get("input_photo_path")
+                if not input_path:
+                    raise RuntimeError("Missing input_photo_path")
+
+                image_url = await get_public_input_url(input_path)
+                logger.info(f"🖼️ IMAGE_URL: {image_url}")
+
+                # ✅ ВОТ ТУТ теперь выбирается нужный шаблон
+                script = build_script_for_job(job)
+                logger.info(f"📝 Generated script (first 200 chars): {script[:200]}...")
+
+                task_id = create_task_sora_i2v(prompt=script, image_url=image_url)
+                if not task_id:
+                    raise RuntimeError("KIE: could not extract task_id")
                 
+                logger.info(f"✅ KIE task created: {task_id}")
+                await update_job(job_id, {"kie_task_id": task_id})
+
                 await bot.send_message(
                     tg_user_id,
-                    error_text,
-                    reply_markup=kb_result(kind),
+                    "🎬 Генерация запущена.\n\n"
+                    "⏱ Обычно это занимает от <b>1 до 30 минут</b> в зависимости от загруженности нейросети Sora 2.\n\n"
+                    "Ожидайте, я пришлю результат сюда.",
                     parse_mode="HTML",
                 )
-                await asyncio.sleep(1)
-                continue
+                
+                logger.info(f"⏳ Polling KIE for task {task_id}...")
+                # Увеличим таймаут до 6 минут (360 сек) для большей надежности
+                info = await asyncio.to_thread(poll_record_info, task_id, 360, 10)
 
-            video_url = find_video_url(info)
-            if not video_url:
-                logger.warning("❌ Video URL not found in KIE response")
-                refund_credit(tg_user_id, 1)
-                update_job(job_id, {"status": "failed", "error": "no_video_url", "finished_at": now_iso()})
-                await bot.send_message(
-                    tg_user_id,
-                    "❌ Я дождался ответа KIE, но не нашёл ссылку на видео. Кредит вернул ✅",
-                    reply_markup=kb_result(kind),
-                )
-                await asyncio.sleep(1)
-                continue
-            
-            logger.info(f"✅ Video URL found: {video_url}")
-            logger.info(f"📥 Downloading video from {video_url}...")
-            data = await download_bytes(video_url)
-            logger.info(f"✅ Downloaded {len(data)} bytes")
+                logger.info("\n==== KIE recordInfo raw ====")
+                logger.info(json.dumps(info, ensure_ascii=False, indent=2))
+                logger.info("==== /KIE recordInfo raw ====\n")
 
-            max_bytes = 45 * 1024 * 1024
-            if len(data) > max_bytes:
-                logger.info(f"⚠️ Video too large ({len(data)} bytes), sending URL instead")
-                update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": video_url})
-                await bot.send_message(
-                    tg_user_id,
-                    f"✅ Видео готово! Ссылка:\n{video_url}",
-                    reply_markup=kb_result(kind),
-                )
-            else:
-                logger.info(f"📤 Sending video to user {tg_user_id}")
-                await bot.send_video(
-                    tg_user_id,
-                    video=BufferedInputFile(data, filename="reels.mp4"),
-                    caption="✅ Видео готово!",
-                    reply_markup=kb_result(kind),
-                )
-                update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": video_url})
-                logger.info(f"✅ Job {job_id} completed successfully")
-
-        except Exception as e:
-            consecutive_errors += 1
-            logger.error(f"❌ WORKER_ERROR (attempt {consecutive_errors}/{max_consecutive_errors}): {repr(e)}", exc_info=True)
-            
-            if consecutive_errors >= max_consecutive_errors:
-                logger.critical(f"💥 Too many consecutive errors ({max_consecutive_errors}), shutting down...")
-                break
-            
-            try:
-                if 'tg_user_id' in locals():
-                    refund_credit(tg_user_id, 1)
-            except Exception:
-                pass
-            
-            if 'job_id' in locals():
-                try:
-                    update_job(job_id, {"status": "failed", "error": str(e), "finished_at": now_iso()})
-                except Exception:
-                    pass
-            
-            try:
-                if 'tg_user_id' in locals() and 'job' in locals():
+                fail_msg = extract_fail_message(info)
+                if fail_msg:
+                    logger.warning(f"❌ KIE generation failed: {fail_msg}")
+                    await refund_credit(tg_user_id, 1)
+                    await update_job(job_id, {"status": "failed", "error": fail_msg, "finished_at": now_iso()})
+                    
+                    # Определяем тип ошибки
+                    fail_msg_lower = fail_msg.lower()
+                    is_policy_violation = any(word in fail_msg_lower for word in [
+                        "policy", "content", "inappropriate", "violation", "rule", "guideline",
+                        "safety", "prohibited", "restricted", "denied", "rejected"
+                    ])
+                    
+                    if is_policy_violation:
+                        error_text = (
+                            "⚠️ <b>Вы нарушили правила SORA 2</b>\n\n"
+                            "Внимательно изучите требования к:\n"
+                            "• фото (чаще всего проблема в фото)\n"
+                            "• промпту\n\n"
+                            "1 кредит вернули на баланс ✅"
+                        )
+                    else:
+                        error_text = (
+                            "❌ <b>Произошла ошибка генерации</b>\n\n"
+                            "Обратитесь в службу поддержки: @kirbudilov\n\n"
+                            "1 кредит вернули на баланс ✅"
+                        )
+                    
                     await bot.send_message(
                         tg_user_id,
-                        f"❌ Произошла ошибка генерации. 1 кредит вернулся на баланс ✅\n{e}",
-                        reply_markup=kb_result(job.get("kind") or "reels"),
+                        error_text,
+                        reply_markup=kb_result(kind),
+                        parse_mode="HTML",
                     )
-            except Exception as notify_error:
-                logger.error(f"❌ Failed to notify user: {notify_error}")
+                    await asyncio.sleep(1)
+                    continue
 
-        await asyncio.sleep(1)
+                video_url = find_video_url(info)
+                if not video_url:
+                    logger.warning("❌ Video URL not found in KIE response")
+                    await refund_credit(tg_user_id, 1)
+                    await update_job(job_id, {"status": "failed", "error": "no_video_url", "finished_at": now_iso()})
+                    await bot.send_message(
+                        tg_user_id,
+                        "❌ Я дождался ответа KIE, но не нашёл ссылку на видео. Кредит вернул ✅",
+                        reply_markup=kb_result(kind),
+                    )
+                    await asyncio.sleep(1)
+                    continue
+                
+                logger.info(f"✅ Video URL found: {video_url}")
+                logger.info(f"📥 Downloading video from {video_url}...")
+                data = await download_bytes(video_url)
+                logger.info(f"✅ Downloaded {len(data)} bytes")
+
+                max_bytes = 45 * 1024 * 1024
+                if len(data) > max_bytes:
+                    logger.info(f"⚠️ Video too large ({len(data)} bytes), sending URL instead")
+                    await update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": video_url})
+                    await bot.send_message(
+                        tg_user_id,
+                        f"✅ Видео готово! Ссылка:\n{video_url}",
+                        reply_markup=kb_result(kind),
+                    )
+                else:
+                    logger.info(f"📤 Sending video to user {tg_user_id}")
+                    await bot.send_video(
+                        tg_user_id,
+                        video=BufferedInputFile(data, filename="reels.mp4"),
+                        caption="✅ Видео готово!",
+                        reply_markup=kb_result(kind),
+                    )
+                    await update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": video_url})
+                    logger.info(f"✅ Job {job_id} completed successfully")
+
+            except Exception as e:
+                consecutive_errors += 1
+                logger.error(f"❌ WORKER_ERROR (attempt {consecutive_errors}/{max_consecutive_errors}): {repr(e)}", exc_info=True)
+                
+                if consecutive_errors >= max_consecutive_errors:
+                    logger.critical(f"💥 Too many consecutive errors ({max_consecutive_errors}), shutting down...")
+                    break
+                
+                try:
+                    if 'tg_user_id' in locals():
+                        await refund_credit(tg_user_id, 1)
+                except Exception:
+                    pass
+                
+                if 'job_id' in locals():
+                    try:
+                        await update_job(job_id, {"status": "failed", "error": str(e), "finished_at": now_iso()})
+                    except Exception:
+                        pass
+                
+                try:
+                    if 'tg_user_id' in locals() and 'job' in locals():
+                        await bot.send_message(
+                            tg_user_id,
+                            f"❌ Произошла ошибка генерации. 1 кредит вернулся на баланс ✅\n{e}",
+                            reply_markup=kb_result(job.get("kind") or "reels"),
+                        )
+                except Exception as notify_error:
+                    logger.error(f"❌ Failed to notify user: {notify_error}")
+
+            await asyncio.sleep(1)
+    finally:
+        # Закрываем database pool при выходе
+        await close_db_pool()
+        logger.info("✅ Database pool closed")
     
     logger.info("✅ Worker main loop ended gracefully")
 

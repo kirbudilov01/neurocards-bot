@@ -3,7 +3,11 @@
 """
 import os
 import logging
-from typing import Union
+from typing import Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.services.storage import SupabaseStorage
+    from app.services.local_storage import LocalStorage
 
 logger = logging.getLogger(__name__)
 
