@@ -23,7 +23,8 @@ Telegram-бот для генерации вертикальных видео (R
 
 - **Python 3.11+**
 - **aiogram 3** - фреймворк для Telegram ботов
-- **Supabase** - PostgreSQL база данных + хранилище файлов
+- **PostgreSQL** - база данных (Supabase или локальная)
+- **asyncpg** - асинхронный драйвер PostgreSQL
 - **KIE.AI API** - генерация видео (Sora-2 image-to-video)
 - **OpenAI API** - генерация промптов (GPT-4)
 - **httpx** - асинхронные HTTP запросы
@@ -37,7 +38,13 @@ Telegram-бот для генерации вертикальных видео (R
 BOT_TOKEN=your_telegram_bot_token
 WEBHOOK_SECRET_TOKEN=random_secret_string
 
-# Supabase
+# Database (выбери один из вариантов)
+# Вариант 1: Локальная PostgreSQL (рекомендуется для VPS)
+DATABASE_TYPE=postgres
+DATABASE_URL=postgresql://user:password@localhost:5432/neurocards
+
+# Вариант 2: Supabase (managed)
+DATABASE_TYPE=supabase
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
@@ -53,9 +60,47 @@ OPENAI_API_KEY=your_openai_api_key
 
 ## 🗄️ База данных
 
+Бот поддерживает **2 режима работы с БД** (переключение через `DATABASE_TYPE`):
+
+### Режим 1: Локальная PostgreSQL (для self-hosting)
+
+```bash
+# .env
+DATABASE_TYPE=postgres
+DATABASE_URL=postgresql://botuser:password@localhost:5432/neurocards
+
+# Автоматически настраивается скриптом deploy_to_vps.sh
+```
+
+**Преимущества:**
+- ✅ Полная независимость от внешних сервисов
+- ✅ Быстрее (нет сетевых задержек)
+- ✅ Дешевле (не платишь за managed БД)
+
+### Режим 2: Supabase (managed)
+
+```bash
+# .env
+DATABASE_TYPE=supabase  # или не указывать (по умолчанию)
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+```
+
+**Преимущества:**
+- ✅ Не нужно настраивать PostgreSQL
+- ✅ Автоматические бэкапы
+- ✅ Web UI для управления
+
 ### Миграции
 
-Выполните SQL миграции из `supabase/migrations/` в следующем порядке:
+Полная схема БД находится в `supabase/schema.sql`.
+
+Для локальной PostgreSQL:
+```bash
+psql -d neurocards -f supabase/schema.sql
+```
+
+Для Supabase: выполни SQL миграции из `supabase/migrations/` в следующем порядке:
 
 1. `20240722120000_atomicity_and_idempotency.sql` - атомарность и idempotency
 2. `20240723120000_add_unique_index_on_tg_user_id.sql` - индексы
