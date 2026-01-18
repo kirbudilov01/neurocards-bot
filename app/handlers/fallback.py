@@ -4,7 +4,7 @@ from aiogram.filters import CommandStart
 
 from app.keyboards import kb_continue, kb_menu
 from app import texts
-from app.db import get_or_create_user
+from app.db_adapter import get_or_create_user
 
 router = Router()
 

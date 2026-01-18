@@ -4,7 +4,7 @@ from aiogram.types import Message, FSInputFile
 
 from app import texts
 from app.keyboards import kb_continue
-from app.db import get_or_create_user
+from app.db_adapter import get_or_create_user
 
 router = Router()
 

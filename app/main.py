@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 from app.config import BOT_TOKEN, PUBLIC_BASE_URL
 from app.handlers import start, menu_and_flow, fallback
+from app.db_adapter import init_db_pool, close_db_pool
 
 
 WEBHOOK_PATH = "/telegram/webhook"
@@ -31,8 +32,17 @@ from app.config import BOT_TOKEN, WEBHOOK_SECRET_TOKEN
 async def on_startup(bot: Bot):
     """
     Действия при запуске:
+    - Инициализируем пул БД
     - Устанавливаем webhook
     """
+    try:
+        # Инициализируем пул подключений к БД
+        await init_db_pool()
+        logger.info("✅ Database pool initialized")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize database pool: {e}", exc_info=True)
+        raise
+    
     try:
         await bot.set_webhook(
             WEBHOOK_URL,
@@ -49,6 +59,7 @@ async def on_shutdown(bot: Bot):
     """
     Действия при выключении:
     - Удаляем webhook
+    - Закрываем пул БД
     - Закрываем сессию
     """
     try:
@@ -56,6 +67,12 @@ async def on_shutdown(bot: Bot):
         logger.info("✅ Webhook deleted")
     except Exception as e:
         logger.error(f"⚠️ Error deleting webhook: {e}")
+    
+    try:
+        await close_db_pool()
+        logger.info("✅ Database pool closed")
+    except Exception as e:
+        logger.error(f"⚠️ Error closing database pool: {e}")
     
     try:
         await bot.session.close()
