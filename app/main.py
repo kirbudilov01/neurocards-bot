@@ -1,10 +1,22 @@
 import os
 import asyncio
+import logging
+import sys
 from aiohttp import web
 
 from aiogram import Bot, Dispatcher
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiogram.fsm.storage.memory import MemoryStorage  # 🔥 КРИТИЧЕСКИ ВАЖНО
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
 
 from app.config import BOT_TOKEN, PUBLIC_BASE_URL
 from app.handlers import start, menu_and_flow, fallback
@@ -21,11 +33,16 @@ async def on_startup(bot: Bot):
     Действия при запуске:
     - Устанавливаем webhook
     """
-    await bot.set_webhook(
-        WEBHOOK_URL,
-        drop_pending_updates=True,
-        secret_token=WEBHOOK_SECRET_TOKEN,
-    )
+    try:
+        await bot.set_webhook(
+            WEBHOOK_URL,
+            drop_pending_updates=True,
+            secret_token=WEBHOOK_SECRET_TOKEN,
+        )
+        logger.info(f"✅ Webhook set successfully: {WEBHOOK_URL}")
+    except Exception as e:
+        logger.error(f"❌ Failed to set webhook: {e}", exc_info=True)
+        raise
 
 
 async def on_shutdown(bot: Bot):
@@ -34,8 +51,17 @@ async def on_shutdown(bot: Bot):
     - Удаляем webhook
     - Закрываем сессию
     """
-    await bot.delete_webhook()
-    await bot.session.close()
+    try:
+        await bot.delete_webhook()
+        logger.info("✅ Webhook deleted")
+    except Exception as e:
+        logger.error(f"⚠️ Error deleting webhook: {e}")
+    
+    try:
+        await bot.session.close()
+        logger.info("✅ Bot session closed")
+    except Exception as e:
+        logger.error(f"⚠️ Error closing session: {e}")
 
 
 async def handle_healthz(request):
@@ -43,48 +69,61 @@ async def handle_healthz(request):
 
 
 async def main():
-    # 🔑 Бот
-    bot = Bot(BOT_TOKEN)
+    try:
+        # Проверка обязательных переменных окружения
+        if not BOT_TOKEN:
+            raise ValueError("BOT_TOKEN is not set")
+        if not PUBLIC_BASE_URL:
+            raise ValueError("PUBLIC_BASE_URL is not set")
+        
+        logger.info("Starting bot initialization...")
+        
+        # 🔑 Бот
+        bot = Bot(BOT_TOKEN)
 
-    # ✅ FSM будет РАБОТАТЬ
-    dp = Dispatcher(storage=MemoryStorage())
+        # ✅ FSM будет РАБОТАТЬ
+        dp = Dispatcher(storage=MemoryStorage())
 
-    # 📞 Вешаем startup/shutdown обработчики
-    dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
+        # 📞 Вешаем startup/shutdown обработчики
+        dp.startup.register(on_startup)
+        dp.shutdown.register(on_shutdown)
 
-    # 📦 Роутеры (порядок важен)
-    dp.include_router(start.router)
-    dp.include_router(menu_and_flow.router)
-    dp.include_router(fallback.router)  # ВСЕГДА ПОСЛЕДНИМ
+        # 📦 Роутеры (порядок важен)
+        dp.include_router(start.router)
+        dp.include_router(menu_and_flow.router)
+        dp.include_router(fallback.router)  # ВСЕГДА ПОСЛЕДНИМ
 
-    # 🌐 Web app
-    app = web.Application()
+        # 🌐 Web app
+        app = web.Application()
 
-    # Health check endpoints
-    app.router.add_get("/", handle_healthz)
-    app.router.add_get("/healthz", handle_healthz)
+        # Health check endpoints
+        app.router.add_get("/", handle_healthz)
+        app.router.add_get("/healthz", handle_healthz)
 
-    # Webhook endpoint
-    SimpleRequestHandler(
-        dispatcher=dp,
-        bot=bot,
-    ).register(app, path=WEBHOOK_PATH)
+        # Webhook endpoint
+        SimpleRequestHandler(
+            dispatcher=dp,
+            bot=bot,
+        ).register(app, path=WEBHOOK_PATH)
 
-    # aiogram v3 — передаем всё, что нужно в хэндлеры, через kwargs
-    setup_application(app, dp, bot=bot)
+        # aiogram v3 — передаем всё, что нужно в хэндлеры, через kwargs
+        setup_application(app, dp, bot=bot)
 
-    # 🚀 Запуск сервера
-    port = int(os.getenv("PORT", "10000"))
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, host="0.0.0.0", port=port)
-    await site.start()
+        # 🚀 Запуск сервера
+        port = int(os.getenv("PORT", "10000"))
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, host="0.0.0.0", port=port)
+        await site.start()
 
-    print("🚀 Webhook bot started", flush=True)
+        logger.info(f"🚀 Webhook bot started on port {port}")
+        logger.info(f"📍 Webhook URL: {WEBHOOK_URL}")
 
-    # держим процесс живым
-    await asyncio.Event().wait()
+        # держим процесс живым
+        await asyncio.Event().wait()
+    except Exception as e:
+        logger.critical(f"💥 Critical error in main: {e}", exc_info=True)
+        raise
 
 
 if __name__ == "__main__":

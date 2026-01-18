@@ -23,7 +23,7 @@ def create_task_sora_i2v(prompt: str, image_url: str) -> str:
         "input": {
             "prompt": prompt,
             "image_urls": [image_url],
-            "aspect_ratio": "portrait",
+            "aspect_ratio": "9:16",  # ✅ ИСПРАВЛЕНО: точный формат для вертикального видео
             "n_frames": "15",
             "remove_watermark": True,
         },
