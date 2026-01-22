@@ -3,7 +3,7 @@ import uuid
 from app import texts
 from app.keyboards import kb_no_credits, kb_started
 from app.services.tg_files import download_photo_bytes
-from app.services.storage import upload_input_photo
+from app.services.storage_factory import get_storage
 from app.db_adapter import get_job_by_idempotency_key, create_job_and_consume_credit, get_queue_position, safe_get_balance
 
 
@@ -30,7 +30,8 @@ async def start_generation(
     # 3) загрузить в storage
     # ВАЖНО: путь внутри bucket БЕЗ "inputs/"
     input_path = f"{tg_user_id}/{uuid.uuid4().hex}.jpg"
-    await upload_input_photo(input_path, photo_bytes)
+    storage = get_storage()
+    await storage.upload_input(input_path, photo_bytes)
 
     # 4) создать job и списать кредит атомарно
     try:

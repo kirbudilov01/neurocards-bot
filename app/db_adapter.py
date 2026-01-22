@@ -66,7 +66,7 @@ else:
     from supabase import create_client, Client
     from app.config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
     
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    supabase: Client = None  # Инициализация отложена
     
     # Заглушки для совместимости API
     async def init_db_pool():
@@ -501,3 +501,14 @@ async def list_last_jobs(tg_user_id: int, limit: int = 5) -> list[Dict[str, Any]
             .execute
         )
         return res.data or []
+
+
+# ========== АЛИАСЫ ДЛЯ ОБРАТНОЙ СОВМЕСТИМОСТИ ==========
+# Для старого кода, который использует другие имена функций
+
+# Алиас для worker.worker
+update_job = update_job_status
+
+# Алиас для handlers/services
+create_job = create_job_and_consume_credit
+get_user = get_user_by_tg_id

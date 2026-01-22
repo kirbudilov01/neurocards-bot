@@ -1,10 +1,10 @@
 import logging
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, FSInputFile
-from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 
 from app import texts
+from app.states import GenFlow  # ✅ Импортируем из states
 from app.keyboards import (
     kb_menu,
     kb_cabinet,
@@ -35,14 +35,6 @@ async def show_menu(message, text, reply_markup):
         )
     except Exception:
         await message.answer(text, reply_markup=reply_markup, parse_mode=PARSE_MODE)
-
-
-class GenFlow(StatesGroup):
-    waiting_photo = State()
-    waiting_product = State()
-    waiting_template = State()
-    waiting_wishes = State()
-    waiting_user_prompt = State()
 
 
 @router.callback_query(F.data == "continue")
@@ -157,7 +149,7 @@ async def on_any_image(message: Message, state: FSMContext):
         return
 
     await state.update_data(photo_file_id=file_id)
-    await state.set_state(GenFlow.waiting_product)
+    await state.set_state(GenFlow.waiting_product_info)
 
     await message.answer(
         getattr(texts, "ASK_PRODUCT_TEXT", "Напиши информацию о товаре одним сообщением."),
@@ -166,7 +158,7 @@ async def on_any_image(message: Message, state: FSMContext):
     )
 
 
-@router.message(GenFlow.waiting_product, F.text)
+@router.message(GenFlow.waiting_product_info, F.text)
 async def on_product_info(message: Message, state: FSMContext):
     await state.update_data(product_text=message.text.strip())
     await state.set_state(GenFlow.waiting_template)
@@ -178,7 +170,7 @@ async def on_product_info(message: Message, state: FSMContext):
     )
 
 
-@router.message(GenFlow.waiting_product)
+@router.message(GenFlow.waiting_product_info)
 async def on_product_wrong(message: Message):
     await message.answer(
         "Напиши текстом описание товара 🙂",
