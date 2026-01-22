@@ -10,7 +10,7 @@ WorkingDirectory=/var/neurocards/neurocards-bot
 Environment="PYTHONUNBUFFERED=1"
 Environment="WORKER_ID=%i"
 EnvironmentFile=/var/neurocards/neurocards-bot/.env
-ExecStart=/var/neurocards/neurocards-bot/venv/bin/python -m worker.worker
+ExecStart=/usr/bin/python3 -m worker.worker
 Restart=always
 RestartSec=10
 StandardOutput=append:/var/neurocards/neurocards-bot/worker-%i.log

@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  # PostgreSQL база данных
+  postgres:
+    image: postgres:15-alpine
+    container_name: neurocards-postgres
+    environment:
+      POSTGRES_DB: neurocards
+      POSTGRES_USER: neurocards_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password_here}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U neurocards_user -d neurocards"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Телеграм бот (веб-сервис, webhook)
+  bot:
+    build: .
+    container_name: neurocards-bot
+    command: python -m app.main
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
+      - DATABASE_URL=postgresql://neurocards_user:${POSTGRES_PASSWORD:-secure_password_here}@postgres:5432/neurocards
+      - WEBHOOK_SECRET_TOKEN=${WEBHOOK_SECRET_TOKEN:-random_secret_token}
+    ports:
+      - "10000:10000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Background Worker (масштабируемый)
+  worker:
+    build: .
+    command: python -m worker.worker
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - KIE_API_KEY=${KIE_API_KEY}
+      - KIE_BASE_URL=${KIE_BASE_URL:-https://api.kie.ai}
+      - KIE_CREATE_TASK_URL=${KIE_CREATE_TASK_URL:-https://api.kie.ai/api/v1/jobs/createTask}
+      - KIE_RECORD_INFO_URL=${KIE_RECORD_INFO_URL:-https://api.kie.ai/api/v1/jobs/recordInfo}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com}
+      - DATABASE_URL=postgresql://neurocards_user:${POSTGRES_PASSWORD:-secure_password_here}@postgres:5432/neurocards
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      replicas: 5  # 🔥 5 воркеров для параллельной обработки
+
+volumes:
+  postgres_data:
