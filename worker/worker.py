@@ -254,7 +254,7 @@ async def main():
                 
                 logger.info(f"⏳ Polling KIE for task {task_id}...")
                 # Увеличим таймаут до 6 минут (360 сек) для большей надежности
-                info = await asyncio.to_thread(poll_record_info, task_id, api_key, 360, 10)
+                info = await asyncio.to_thread(poll_record_info, task_id, api_key, 1800, 15)
 
                 logger.info("\n==== KIE recordInfo raw ====")
                 logger.info(json.dumps(info, ensure_ascii=False, indent=2))
