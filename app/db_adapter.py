@@ -8,6 +8,16 @@ import logging
 import os
 from functools import partial
 from typing import Any, Callable, Dict, Optional, TypeVar
+from pathlib import Path
+
+# Загружаем .env файл если он существует
+try:
+    from dotenv import load_dotenv
+    env_path = Path(__file__).parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+except ImportError:
+    pass  # dotenv не установлен, используем системные переменные
 
 T = TypeVar("T")
 
@@ -66,7 +76,9 @@ else:
     from supabase import create_client, Client
     from app.config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
     
-    supabase: Client = None  # Инициализация отложена
+    # Инициализируем Supabase client
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    logger.info(f"✅ Supabase client initialized for {SUPABASE_URL}")
     
     # Заглушки для совместимости API
     async def init_db_pool():
