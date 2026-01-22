@@ -1,0 +1,20 @@
+[Unit]
+Description=Neurocards Telegram Bot (Webhook Web Service)
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/neurocards/neurocards-bot
+Environment="PYTHONUNBUFFERED=1"
+Environment="PORT=8000"
+EnvironmentFile=/var/neurocards/neurocards-bot/.env
+ExecStart=/var/neurocards/neurocards-bot/venv/bin/python -m app.main
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/neurocards/neurocards-bot/bot.log
+StandardError=append:/var/neurocards/neurocards-bot/bot.log
+
+[Install]
+WantedBy=multi-user.target
