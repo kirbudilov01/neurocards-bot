@@ -21,8 +21,11 @@ from app.db_adapter import (
     init_db_pool, close_db_pool, fetch_next_queued_job,
     update_job, refund_credit, get_user_by_tg_id
 )
+MAX_RETRY_ATTEMPTS = 3  # Максимум попыток для TEMPORARY errors
 from app.services.storage_factory import get_storage
 from worker.kie_client import create_task_sora_i2v, poll_record_info
+from worker.kie_error_classifier import classify_kie_error, should_retry, get_retry_delay, get_user_error_message, KieErrorType
+from worker.kie_key_rotator import get_rotator
 from worker.openai_prompter import build_prompt_with_gpt
 from worker.prompt_templates import TEMPLATES  # ✅ ВАЖНО
 
@@ -70,6 +73,10 @@ def kb_result(kind: str = "reels") -> InlineKeyboardMarkup:
 
 async def get_public_input_url(input_path: str) -> str:
     """Получить публичный URL для input файла через storage_factory"""
+    # Если это уже URL - вернуть как есть
+    if input_path and (input_path.startswith("http://") or input_path.startswith("https://")):
+        return input_path
+    
     try:
         storage = get_storage()
         # Normalize path
@@ -138,7 +145,16 @@ def build_script_for_job(job: dict) -> str:
     template_id = (job.get("template_id") or "ugc").strip()
     tpl = TEMPLATES.get(template_id) or TEMPLATES.get("ugc")
 
+    # product_info может быть строкой (JSON) или dict - фикс для PostgreSQL
+    # product_info может быть строкой (JSON) или dict - фикс для PostgreSQL
     product_info = job.get("product_info") or {}
+    if isinstance(product_info, str):
+        import json
+        try:
+            product_info = json.loads(product_info)
+        except:
+            product_info = {}
+    
     product_text = (product_info.get("text") or "").strip()
     extra_wishes = job.get("extra_wishes")
 
@@ -191,6 +207,7 @@ async def main():
         while not shutdown_flag:
             try:
                 job = await fetch_next_queued_job()
+                
                 if not job:
                     await asyncio.sleep(2)
                     continue
@@ -203,12 +220,11 @@ async def main():
                 
                 # Получаем tg_user_id напрямую из job
                 tg_user_id = int(job["tg_user_id"])
+                kind = job.get("kind") or "reels"
 
                 attempts = int(job.get("attempts") or 0) + 1
-                await update_job(job_id, {"status": "processing", "started_at": now_iso(), "attempts": attempts})
+                await update_job(job_id, {"status": "processing", "started_at": "NOW()", "attempts": attempts})
                 logger.info(f"🔄 Job {job_id} attempt {attempts}")
-
-                kind = job.get("kind") or "reels"
 
                 input_path = job.get("input_photo_path")
                 if not input_path:
@@ -221,7 +237,7 @@ async def main():
                 script = build_script_for_job(job)
                 logger.info(f"📝 Generated script (first 200 chars): {script[:200]}...")
 
-                task_id = create_task_sora_i2v(prompt=script, image_url=image_url)
+                task_id, api_key = create_task_sora_i2v(prompt=script, image_url=image_url)
                 if not task_id:
                     raise RuntimeError("KIE: could not extract task_id")
                 
@@ -238,7 +254,7 @@ async def main():
                 
                 logger.info(f"⏳ Polling KIE for task {task_id}...")
                 # Увеличим таймаут до 6 минут (360 сек) для большей надежности
-                info = await asyncio.to_thread(poll_record_info, task_id, 360, 10)
+                info = await asyncio.to_thread(poll_record_info, task_id, api_key, 1800, 15)
 
                 logger.info("\n==== KIE recordInfo raw ====")
                 logger.info(json.dumps(info, ensure_ascii=False, indent=2))
@@ -247,34 +263,48 @@ async def main():
                 fail_msg = extract_fail_message(info)
                 if fail_msg:
                     logger.warning(f"❌ KIE generation failed: {fail_msg}")
-                    await refund_credit(tg_user_id, 1)
-                    await update_job(job_id, {"status": "failed", "error": fail_msg, "finished_at": now_iso()})
                     
-                    # Определяем тип ошибки
-                    fail_msg_lower = fail_msg.lower()
-                    is_policy_violation = any(word in fail_msg_lower for word in [
-                        "policy", "content", "inappropriate", "violation", "rule", "guideline",
-                        "safety", "prohibited", "restricted", "denied", "rejected"
-                    ])
+                    # Классифицируем ошибку
+                    error_type, error_msg = classify_kie_error(info)
+                    logger.info(f"🔍 Error classified as: {error_type.value}")
                     
-                    if is_policy_violation:
-                        error_text = (
-                            "⚠️ <b>Вы нарушили правила SORA 2</b>\n\n"
-                            "Внимательно изучите требования к:\n"
-                            "• фото (чаще всего проблема в фото)\n"
-                            "• промпту\n\n"
-                            "1 кредит вернули на баланс ✅"
-                        )
+                    # Обновляем health rotator'а
+                    rotator = get_rotator()
+                    if error_type == KieErrorType.RATE_LIMIT:
+                        rotator.report_rate_limit(api_key)
+                    elif error_type == KieErrorType.BILLING:
+                        rotator.report_billing_error(api_key)
                     else:
-                        error_text = (
-                            "❌ <b>Произошла ошибка генерации</b>\n\n"
-                            "Обратитесь в службу поддержки: @kirbudilov\n\n"
-                            "1 кредит вернули на баланс ✅"
-                        )
+                        rotator.report_success(api_key)  # не проблема с ключом
+                    
+                    # Проверяем нужен ли retry
+                    if should_retry(error_type, attempts):
+                        retry_delay = get_retry_delay(error_type, attempts)
+                        logger.info(f"🔄 Will retry job {job_id} after {retry_delay}s (attempt {attempts}/{MAX_RETRY_ATTEMPTS})")
+                        
+                        # Уведомляем пользователя о временной ошибке (только при первом retry)
+                        if error_type == KieErrorType.TEMPORARY and attempts == 2:
+                            await bot.send_message(
+                                tg_user_id,
+                                "⚠️ KIE временно недоступен, повторяю попытку...",
+                                parse_mode="HTML",
+                            )
+                        
+                        # Возвращаем job обратно в очередь для retry
+                        await update_job(job_id, {"status": "queued", "attempts": attempts})
+                        
+                        # Ждём перед retry
+                        logger.info(f"⏳ Sleeping {retry_delay}s before retry...")
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    
+                    # Финальный fail - возвращаем кредит и уведомляем
+                    await refund_credit(tg_user_id)
+                    await update_job(job_id, {"status": "failed", "error": error_msg, "finished_at": "NOW()"})
                     
                     await bot.send_message(
                         tg_user_id,
-                        error_text,
+                        get_user_error_message(error_type),
                         reply_markup=kb_result(kind),
                         parse_mode="HTML",
                     )
@@ -284,8 +314,8 @@ async def main():
                 video_url = find_video_url(info)
                 if not video_url:
                     logger.warning("❌ Video URL not found in KIE response")
-                    await refund_credit(tg_user_id, 1)
-                    await update_job(job_id, {"status": "failed", "error": "no_video_url", "finished_at": now_iso()})
+                    await refund_credit(tg_user_id)
+                    await update_job(job_id, {"status": "failed", "error": "no_video_url", "finished_at": "NOW()"})
                     await bot.send_message(
                         tg_user_id,
                         "❌ Я дождался ответа KIE, но не нашёл ссылку на видео. Кредит вернул ✅",
@@ -295,6 +325,11 @@ async def main():
                     continue
                 
                 logger.info(f"✅ Video URL found: {video_url}")
+                
+                # Отмечаем успешное использование API ключа
+                rotator = get_rotator()
+                rotator.report_success(api_key)
+                
                 logger.info(f"📥 Downloading video from {video_url}...")
                 data = await download_bytes(video_url)
                 logger.info(f"✅ Downloaded {len(data)} bytes")
@@ -302,7 +337,7 @@ async def main():
                 max_bytes = 45 * 1024 * 1024
                 if len(data) > max_bytes:
                     logger.info(f"⚠️ Video too large ({len(data)} bytes), sending URL instead")
-                    await update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": video_url})
+                    await update_job(job_id, {"status": "done", "finished_at": "NOW()", "output_url": video_url})
                     await bot.send_message(
                         tg_user_id,
                         f"✅ Видео готово! Ссылка:\n{video_url}",
@@ -310,13 +345,21 @@ async def main():
                     )
                 else:
                     logger.info(f"📤 Sending video to user {tg_user_id}")
+                    # Готовим кнопки с retry
+                    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                    retry_markup = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="🔄 Сделать ещё с этим товаром", callback_data=f"retry:{job_id}")],
+                        [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")]
+                    ])
+                    
                     await bot.send_video(
                         tg_user_id,
                         video=BufferedInputFile(data, filename="reels.mp4"),
-                        caption="✅ Видео готово!",
-                        reply_markup=kb_result(kind),
+                        caption="✅ <b>Видео готово!</b>",
+                        parse_mode="HTML",
+                        reply_markup=retry_markup,
                     )
-                    await update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": video_url})
+                    await update_job(job_id, {"status": "done", "finished_at": "NOW()", "output_url": video_url})
                     logger.info(f"✅ Job {job_id} completed successfully")
 
             except Exception as e:
@@ -329,13 +372,13 @@ async def main():
                 
                 try:
                     if 'tg_user_id' in locals():
-                        await refund_credit(tg_user_id, 1)
+                        await refund_credit(tg_user_id)
                 except Exception:
                     pass
                 
                 if 'job_id' in locals():
                     try:
-                        await update_job(job_id, {"status": "failed", "error": str(e), "finished_at": now_iso()})
+                        await update_job(job_id, {"status": "failed", "error": str(e), "finished_at": "NOW()"})
                     except Exception:
                         pass
                 

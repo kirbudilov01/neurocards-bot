@@ -513,8 +513,50 @@ async def list_last_jobs(tg_user_id: int, limit: int = 5) -> list[Dict[str, Any]
 # ========== АЛИАСЫ ДЛЯ ОБРАТНОЙ СОВМЕСТИМОСТИ ==========
 # Для старого кода, который использует другие имена функций
 
-# Алиас для worker.worker
-update_job = update_job_status
+# Новая функция для worker.py (принимает dict с полями для обновления)
+async def update_job(job_id: str, updates: Dict[str, Any]):
+    """
+    Обновляет задание с произвольным набором полей
+    Используется worker.py с новой системой обработки ошибок
+    
+    ВАЖНО: Для timestamp полей передавайте строку "NOW()" чтобы использовать SQL NOW()
+    """
+    if DATABASE_TYPE == "postgres":
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            # Формируем динамический UPDATE запрос
+            set_parts = []
+            params = []
+            
+            for key, value in updates.items():
+                # Для "NOW()" вставляем напрямую в SQL
+                if isinstance(value, str) and value == "NOW()":
+                    set_parts.append(f"{key} = NOW()")
+                else:
+                    set_parts.append(f"{key} = ${len(params) + 1}")
+                    params.append(value)
+            
+            if not set_parts:
+                return  # Нечего обновлять
+            
+            # job_id всегда последний параметр
+            params.append(job_id)
+            query = f"UPDATE jobs SET {', '.join(set_parts)} WHERE id = ${len(params)}"
+            
+            await conn.execute(query, *params)
+    else:
+        # Supabase версия
+        clean_updates = {}
+        for key, value in updates.items():
+            if isinstance(value, str) and value == "NOW()":
+                from datetime import datetime, timezone
+                clean_updates[key] = datetime.now(timezone.utc).isoformat()
+            else:
+                clean_updates[key] = value
+        
+        await run_blocking(
+            lambda: supabase.table("jobs").update(clean_updates).eq("id", job_id).execute()
+        )
 
 # Алиас для handlers/services
 create_job = create_job_and_consume_credit

@@ -1,0 +1,37 @@
+[Unit]
+Description=Neurocards Video Generation Worker (Instance %i)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/neurocards/neurocards-bot
+Environment="PATH=/var/neurocards/neurocards-bot/venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=/var/neurocards/neurocards-bot/.env
+
+# Запуск worker'а
+ExecStart=/var/neurocards/neurocards-bot/venv/bin/python -m worker.worker
+
+# Restart политика
+Restart=always
+RestartSec=10
+StartLimitInterval=300
+StartLimitBurst=5
+
+# Graceful shutdown
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Логирование
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=neurocards-worker-%i
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

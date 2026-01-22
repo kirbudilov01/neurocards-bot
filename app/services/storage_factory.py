@@ -1,43 +1,36 @@
 """
-Фабрика для получения нужного типа хранилища (Supabase или локальное)
+Storage Factory - автоматически выбирает тип хранилища
 """
 import os
 import logging
-from typing import Union, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from app.services.storage import SupabaseStorage
-    from app.services.local_storage import LocalStorage
 
 logger = logging.getLogger(__name__)
 
+STORAGE_TYPE = os.getenv("STORAGE_TYPE", "local").lower()
+LOCAL_STORAGE_BASE_PATH = os.getenv("LOCAL_STORAGE_BASE_PATH", "/var/neurocards/storage")
 
-def get_storage() -> Union['SupabaseStorage', 'LocalStorage']:
+
+def get_storage():
     """
-    Возвращает инстанс хранилища в зависимости от конфигурации
-    
-    Определяется по переменной окружения STORAGE_TYPE:
-    - "local" - локальное файловое хранилище
-    - "supabase" (по умолчанию) - Supabase Storage
+    Возвращает объект хранилища в зависимости от STORAGE_TYPE
     """
-    storage_type = os.getenv("STORAGE_TYPE", "supabase").lower()
-    
-    if storage_type == "local":
-        logger.info("📁 Using LOCAL storage")
-        from app.services.local_storage import storage, init_storage
-        
-        if storage is None:
-            storage_path = os.getenv("STORAGE_PATH", "/var/neurocards/storage")
-            logger.info(f"📁 Initializing local storage at: {storage_path}")
-            return init_storage(storage_path)
-        
-        return storage
-    
+    if STORAGE_TYPE == "local":
+        logger.info(f"📁 Using LOCAL storage at {LOCAL_STORAGE_BASE_PATH}")
+        from app.services.local_storage import LocalStorage
+        return LocalStorage(base_path=LOCAL_STORAGE_BASE_PATH)
     else:
         logger.info("☁️ Using SUPABASE storage")
-        from app.services.storage import storage
+        from app.services import storage
         return storage
 
 
-# Экспортируем для удобного импорта
-storage = get_storage()
+# Глобальный инстанс
+_storage_instance = None
+
+
+def get_storage_instance():
+    """Singleton для хранилища"""
+    global _storage_instance
+    if _storage_instance is None:
+        _storage_instance = get_storage()
+    return _storage_instance

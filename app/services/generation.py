@@ -34,18 +34,16 @@ async def start_generation(
     # ВАЖНО: путь внутри bucket БЕЗ "inputs/"
     input_path = f"{tg_user_id}/{uuid.uuid4().hex}.jpg"
     storage = get_storage()
-    await storage.upload_input(input_path, photo_bytes)
+    await storage.upload_input_photo(input_path, photo_bytes)
 
     # 4) создать job и списать кредит атомарно
     try:
         result = await create_job_and_consume_credit(
             tg_user_id=tg_user_id,
+            template_type=kind,
             idempotency_key=idempotency_key,
-            kind=kind,
-            input_photo_path=input_path,
-            product_info=product_info,
-            extra_wishes=extra_wishes,
-            template_id=template_id,
+            photo_path=input_path,
+            prompt_input=product_info,
         )
         job_id = result["job_id"]
         new_credits = result["new_credits"]
@@ -69,17 +67,6 @@ async def start_generation(
     except Exception:
         pass
 
-    # 5) одно красивое сообщение “генерация запущена” + баланс + кнопки
-    started_tpl = getattr(
-        texts,
-        "GENERATION_STARTED",
-        "Генерация запущена. Баланс: {credits}",
-    )
-    await bot.send_message(
-        tg_user_id,
-        started_tpl.format(credits=new_credits),
-        reply_markup=kb_started(),
-        parse_mode="HTML",
-    )
+    # НЕ отправляем уведомление здесь - worker отправит его сам
 
     return job_id, new_credits
