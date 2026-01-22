@@ -27,7 +27,6 @@ def create_task_sora_i2v(prompt: str, image_url: str) -> tuple[str, str]:
         "input": {
             "prompt": prompt,
             "image_urls": [image_url],
-            "aspect_ratio": "9:16",
             "n_frames": "15",
             "remove_watermark": True,
         },
@@ -38,12 +37,13 @@ def create_task_sora_i2v(prompt: str, image_url: str) -> tuple[str, str]:
         r.raise_for_status()
         data = r.json()
 
+    # data может быть {"code": 200, "data": {...}} или {"recordId": ...}
+    data_obj = data.get("data") if data.get("data") is not None else data
+    
     task_id = (
-        data.get("data", {}).get("recordId")
-        or data.get("data", {}).get("taskId")
-        or data.get("data", {}).get("id")
-        or data.get("recordId")
-        or data.get("taskId")
+        data_obj.get("recordId")
+        or data_obj.get("taskId")
+        or data_obj.get("id")
         or data.get("id")
     )
     

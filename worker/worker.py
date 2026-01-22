@@ -18,6 +18,7 @@ from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, InlineKeyboar
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.db_adapter import (
+MAX_RETRY_ATTEMPTS = 3  # Максимум попыток для TEMPORARY errors
     init_db_pool, close_db_pool, fetch_next_queued_job,
     update_job, refund_credit, get_user_by_tg_id
 )
@@ -72,6 +73,10 @@ def kb_result(kind: str = "reels") -> InlineKeyboardMarkup:
 
 async def get_public_input_url(input_path: str) -> str:
     """Получить публичный URL для input файла через storage_factory"""
+    # Если это уже URL - вернуть как есть
+    if input_path and (input_path.startswith("http://") or input_path.startswith("https://")):
+        return input_path
+    
     try:
         storage = get_storage()
         # Normalize path
@@ -202,107 +207,120 @@ async def main():
         while not shutdown_flag:
             try:
                 job = await fetch_next_queued_job()
-                if not job:
-                    await asyncio.sleep(2)
-                    continue
-
-                # Сбрасываем счетчик ошибок при успешном получении задачи
-                consecutive_errors = 0
-                
-                job_id = job["id"]
-                logger.info(f"💼 Processing job {job_id}")
-                
-                # Получаем tg_user_id напрямую из job
-                tg_user_id = int(job["tg_user_id"])
-
-                attempts = int(job.get("attempts") or 0) + 1
-                await update_job(job_id, {"status": "processing", "started_at": "NOW()", "attempts": attempts})
-                logger.info(f"🔄 Job {job_id} attempt {attempts}")
-
-                kind = job.get("kind") or "reels"
-
-                input_path = job.get("input_photo_path")
-                if not input_path:
-                    raise RuntimeError("Missing input_photo_path")
-
-                image_url = await get_public_input_url(input_path)
-                logger.info(f"🖼️ IMAGE_URL: {image_url}")
-
-                # ✅ ВОТ ТУТ теперь выбирается нужный шаблон
-                script = build_script_for_job(job)
-                logger.info(f"📝 Generated script (first 200 chars): {script[:200]}...")
-
-                task_id, api_key = create_task_sora_i2v(prompt=script, image_url=image_url)
-                if not task_id:
-                    raise RuntimeError("KIE: could not extract task_id")
-                
-                logger.info(f"✅ KIE task created: {task_id}")
-                await update_job(job_id, {"kie_task_id": task_id})
-
-                await bot.send_message(
-                    tg_user_id,
-                    "🎬 Генерация запущена.\n\n"
-                    "⏱ Обычно это занимает от <b>1 до 30 минут</b> в зависимости от загруженности нейросети Sora 2.\n\n"
-                    "Ожидайте, я пришлю результат сюда.",
-                    parse_mode="HTML",
-                )
-                
-                logger.info(f"⏳ Polling KIE for task {task_id}...")
-                # Увеличим таймаут до 6 минут (360 сек) для большей надежности
-                info = await asyncio.to_thread(poll_record_info, task_id, api_key, 360, 10)
-
-                logger.info("\n==== KIE recordInfo raw ====")
-                logger.info(json.dumps(info, ensure_ascii=False, indent=2))
-                logger.info("==== /KIE recordInfo raw ====\n")
-
-                fail_msg = extract_fail_message(info)
-                if fail_msg:
-                    logger.warning(f"❌ KIE generation failed: {fail_msg}")
-                    
-                    # Классифицируем ошибку
-                    error_type, error_msg = classify_kie_error(info)
-                    logger.info(f"🔍 Error classified as: {error_type.value}")
-                    
-                    # Обновляем health rotator'а
-                    rotator = get_rotator()
-                    if error_type == KieErrorType.RATE_LIMIT:
-                        rotator.report_rate_limit(api_key)
-                    elif error_type == KieErrorType.BILLING:
-                        rotator.report_billing_error(api_key)
-                    else:
-                        rotator.report_success(api_key)  # не проблема с ключом
-                    
-                    # Проверяем нужен ли retry
-                    if should_retry(error_type, attempts):
-                        retry_delay = get_retry_delay(error_type, attempts)
-                        logger.info(f"🔄 Will retry job {job_id} after {retry_delay}s (attempt {attempts})")
-                        
-                        # Возвращаем в очередь с задержкой
-                        await update_job(job_id, {"status": "queued"})
-                        
-                        # Уведомляем пользователя о временной ошибке (только для TEMPORARY)
-                        if error_type == KieErrorType.TEMPORARY:
-                            await bot.send_message(
-                                tg_user_id,
-                                get_user_error_message(error_type),
-                                parse_mode="HTML",
-                            )
-                        
-                        # Даем системе отдохнуть перед retry
-                        await asyncio.sleep(retry_delay)
+            
+            # Retry loop for KIE errors
+            for retry_attempt in range(MAX_RETRY_ATTEMPTS):
+                    if not job:
+                        await asyncio.sleep(2)
                         continue
-                    
-                    # Финальный fail - возвращаем кредит и уведомляем
-                    await refund_credit(tg_user_id)
-                    await update_job(job_id, {"status": "failed", "error": error_msg, "finished_at": "NOW()"})
-                    
+
+                    # Сбрасываем счетчик ошибок при успешном получении задачи
+                    consecutive_errors = 0
+                
+                    job_id = job["id"]
+                    logger.info(f"💼 Processing job {job_id}")
+                
+                    # Получаем tg_user_id напрямую из job
+                    tg_user_id = int(job["tg_user_id"])
+
+                    attempts = int(job.get("attempts") or 0) + 1
+                    await update_job(job_id, {"status": "processing", "started_at": "NOW()", "attempts": attempts})
+                    logger.info(f"🔄 Job {job_id} attempt {attempts}")
+
+                    kind = job.get("kind") or "reels"
+
+                    input_path = job.get("input_photo_path")
+                    if not input_path:
+                        raise RuntimeError("Missing input_photo_path")
+
+                    image_url = await get_public_input_url(input_path)
+                    logger.info(f"🖼️ IMAGE_URL: {image_url}")
+
+                    # ✅ ВОТ ТУТ теперь выбирается нужный шаблон
+                    script = build_script_for_job(job)
+                    logger.info(f"📝 Generated script (first 200 chars): {script[:200]}...")
+
+                    task_id, api_key = create_task_sora_i2v(prompt=script, image_url=image_url)
+                    if not task_id:
+                        raise RuntimeError("KIE: could not extract task_id")
+                
+                    logger.info(f"✅ KIE task created: {task_id}")
+                    await update_job(job_id, {"kie_task_id": task_id})
+
                     await bot.send_message(
                         tg_user_id,
-                        get_user_error_message(error_type),
-                        reply_markup=kb_result(kind),
+                        "🎬 Генерация запущена.\n\n"
+                        "⏱ Обычно это занимает от <b>1 до 30 минут</b> в зависимости от загруженности нейросети Sora 2.\n\n"
+                        "Ожидайте, я пришлю результат сюда.",
                         parse_mode="HTML",
                     )
-                    await asyncio.sleep(1)
+                
+                    logger.info(f"⏳ Polling KIE for task {task_id}...")
+                    # Увеличим таймаут до 6 минут (360 сек) для большей надежности
+                    info = await asyncio.to_thread(poll_record_info, task_id, api_key, 360, 10)
+
+                    logger.info("\n==== KIE recordInfo raw ====")
+                    logger.info(json.dumps(info, ensure_ascii=False, indent=2))
+                    logger.info("==== /KIE recordInfo raw ====\n")
+
+                    fail_msg = extract_fail_message(info)
+                    if fail_msg:
+                        logger.warning(f"❌ KIE generation failed: {fail_msg}")
+                    
+                        # Классифицируем ошибку
+                        error_type, error_msg = classify_kie_error(info)
+                        logger.info(f"🔍 Error classified as: {error_type.value}")
+                    
+                        # Обновляем health rotator'а
+                        rotator = get_rotator()
+                        if error_type == KieErrorType.RATE_LIMIT:
+                            rotator.report_rate_limit(api_key)
+                        elif error_type == KieErrorType.BILLING:
+                            rotator.report_billing_error(api_key)
+                        else:
+                            rotator.report_success(api_key)  # не проблема с ключом
+                    
+                        # Проверяем нужен ли retry
+                        if should_retry(error_type, attempts):
+                            retry_delay = get_retry_delay(error_type, attempts)
+                            logger.info(f"🔄 Will retry job {job_id} after {retry_delay}s (attempt {attempts}/{MAX_RETRY_ATTEMPTS})")
+                        
+                            # НЕ возвращаем в очередь, а сразу retry в этом же worker
+                            # Increment attempt counter
+                            attempts += 1
+                            await update_job(job_id, {"attempts": attempts, "status": "processing"})
+                        
+                            # Уведомляем пользователя о временной ошибке (только при первом retry)
+                            if error_type == KieErrorType.TEMPORARY and attempts == 2:
+                                await bot.send_message(
+                                    tg_user_id,
+                                    "⚠️ KIE временно недоступен, повторяю попытку...",
+                                    parse_mode="HTML",
+                                )
+                        
+                            # Ждём перед retry
+                            logger.info(f"⏳ Sleeping {retry_delay}s before retry...")
+                            await asyncio.sleep(retry_delay)
+                        
+                            # ВАЖНО: НЕ continue, а break из внутреннего polling loop
+                            # чтобы заново создать task
+                            logger.info(f"🔄 Retrying job {job_id}...")
+                            break  # выходим из polling loop, чтобы заново создать task
+                    
+                        # Финальный fail - возвращаем кредит и уведомляем
+                        await refund_credit(tg_user_id)
+                        await update_job(job_id, {"status": "failed", "error": error_msg, "finished_at": "NOW()"})
+                    
+                        await bot.send_message(
+                            tg_user_id,
+                            get_user_error_message(error_type),
+                            reply_markup=kb_result(kind),
+                            parse_mode="HTML",
+                        )
+                        await asyncio.sleep(1)
+                    continue
+            
+            # End of retry loop
                     continue
 
                 video_url = find_video_url(info)

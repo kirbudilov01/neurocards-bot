@@ -30,7 +30,7 @@ class LocalStorage:
         
         Args:
             bucket: имя bucket'а (inputs/outputs)
-            filename: имя файла
+            filename: имя файла (может содержать подпапки)
             file_data: содержимое файла в байтах
         
         Returns:
@@ -40,6 +40,9 @@ class LocalStorage:
         bucket_path.mkdir(parents=True, exist_ok=True)
         
         file_path = bucket_path / filename
+        
+        # Создаем родительские директории если их нет
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         
         try:
             async with aiofiles.open(file_path, 'wb') as f:
@@ -177,6 +180,14 @@ class LocalStorage:
                 files.append(file_path.name)
         
         return sorted(files)
+    
+    async def upload_input_photo(self, path: str, data: bytes) -> str:
+        """Загружает входное фото"""
+        return await self.upload_file("inputs", path, data)
+    
+    async def upload_output_file(self, path: str, data: bytes, content_type: str) -> str:
+        """Загружает выходной файл"""
+        return await self.upload_file("outputs", path, data)
 
 
 # Глобальный инстанс для импорта
