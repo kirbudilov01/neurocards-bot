@@ -140,7 +140,16 @@ def build_script_for_job(job: dict) -> str:
     template_id = (job.get("template_id") or "ugc").strip()
     tpl = TEMPLATES.get(template_id) or TEMPLATES.get("ugc")
 
+    # product_info может быть строкой (JSON) или dict - фикс для PostgreSQL
+    # product_info может быть строкой (JSON) или dict - фикс для PostgreSQL
     product_info = job.get("product_info") or {}
+    if isinstance(product_info, str):
+        import json
+        try:
+            product_info = json.loads(product_info)
+        except:
+            product_info = {}
+    
     product_text = (product_info.get("text") or "").strip()
     extra_wishes = job.get("extra_wishes")
 
@@ -284,7 +293,7 @@ async def main():
                         continue
                     
                     # Финальный fail - возвращаем кредит и уведомляем
-                    await refund_credit(tg_user_id, 1)
+                    await refund_credit(tg_user_id)
                     await update_job(job_id, {"status": "failed", "error": error_msg, "finished_at": "NOW()"})
                     
                     await bot.send_message(
@@ -299,7 +308,7 @@ async def main():
                 video_url = find_video_url(info)
                 if not video_url:
                     logger.warning("❌ Video URL not found in KIE response")
-                    await refund_credit(tg_user_id, 1)
+                    await refund_credit(tg_user_id)
                     await update_job(job_id, {"status": "failed", "error": "no_video_url", "finished_at": "NOW()"})
                     await bot.send_message(
                         tg_user_id,
@@ -330,11 +339,19 @@ async def main():
                     )
                 else:
                     logger.info(f"📤 Sending video to user {tg_user_id}")
+                    # Готовим кнопки с retry
+                    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                    retry_markup = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="🔄 Сделать ещё с этим товаром", callback_data=f"retry:{job_id}")],
+                        [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")]
+                    ])
+                    
                     await bot.send_video(
                         tg_user_id,
                         video=BufferedInputFile(data, filename="reels.mp4"),
-                        caption="✅ Видео готово!",
-                        reply_markup=kb_result(kind),
+                        caption="✅ <b>Видео готово!</b>",
+                        parse_mode="HTML",
+                        reply_markup=retry_markup,
                     )
                     await update_job(job_id, {"status": "done", "finished_at": "NOW()", "output_url": video_url})
                     logger.info(f"✅ Job {job_id} completed successfully")
@@ -349,7 +366,7 @@ async def main():
                 
                 try:
                     if 'tg_user_id' in locals():
-                        await refund_credit(tg_user_id, 1)
+                        await refund_credit(tg_user_id)
                 except Exception:
                     pass
                 

@@ -365,3 +365,49 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
             reply_markup=kb_back_to_menu(),
             parse_mode=PARSE_MODE,
         )
+
+# Handler для "Сделать ещё с этим товаром"
+@router.callback_query(F.data.startswith("retry:"))
+async def retry_same_product(cb: CallbackQuery, state: FSMContext):
+    await cb.answer()
+    
+    # Получаем job_id из предыдущей генерации
+    job_id = cb.data.split(":", 1)[1]
+    
+    # Загружаем данные job из БД
+    from app.db_adapter import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        job = await conn.fetchrow(
+            "SELECT input_photo_path, product_info FROM jobs WHERE id::text = $1",
+            job_id
+        )
+    
+    if not job:
+        await cb.message.answer(
+            "⚠️ Не удалось загрузить данные предыдущей генерации.",
+            reply_markup=kb_back_to_menu(),
+            parse_mode=PARSE_MODE,
+        )
+        return
+    
+    # Восстанавливаем данные в state
+    import json
+    product_info = job["product_info"]
+    if isinstance(product_info, str):
+        product_info = json.loads(product_info)
+    
+    await state.update_data(
+        photo_file_id=job["input_photo_path"],
+        product_text=product_info.get("text", ""),
+    )
+    
+    # Переходим к выбору шаблона
+    await cb.message.answer(
+        "🎬 <b>Отлично! Делаем ещё видео с этим товаром.</b>\n\n"
+        "Выбери формат:",
+        reply_markup=kb_template_type(),
+        parse_mode=PARSE_MODE,
+    )
+    await state.set_state(GenFlow.waiting_template_type)
+
