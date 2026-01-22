@@ -525,24 +525,23 @@ async def update_job(job_id: str, updates: Dict[str, Any]):
         pool = await get_pool()
         async with pool.acquire() as conn:
             # Формируем динамический UPDATE запрос
-            set_clauses = []
+            set_parts = []
             params = []
-            param_idx = 1
             
             for key, value in updates.items():
-                # Для timestamp полей проверяем специальную строку "NOW()"
+                # Для "NOW()" вставляем напрямую в SQL
                 if isinstance(value, str) and value == "NOW()":
-                    set_clauses.append(f"{key} = NOW()")
+                    set_parts.append(f"{key} = NOW()")
                 else:
-                    set_clauses.append(f"{key} = ${param_idx}")
+                    set_parts.append(f"{key} = ${len(params) + 1}")
                     params.append(value)
-                    param_idx += 1
             
-            if not set_clauses:
+            if not set_parts:
                 return  # Нечего обновлять
             
-            query = f"UPDATE jobs SET {', '.join(set_clauses)} WHERE id = ${param_idx}"
+            # job_id всегда последний параметр
             params.append(job_id)
+            query = f"UPDATE jobs SET {', '.join(set_parts)} WHERE id = ${len(params)}"
             
             await conn.execute(query, *params)
     else:
