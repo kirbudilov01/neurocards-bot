@@ -67,17 +67,6 @@ async def start_generation(
     except Exception:
         pass
 
-    # 5) одно красивое сообщение “генерация запущена” + баланс + кнопки
-    started_tpl = getattr(
-        texts,
-        "GENERATION_STARTED",
-        "Генерация запущена. Баланс: {credits}",
-    )
-    await bot.send_message(
-        tg_user_id,
-        started_tpl.format(credits=new_credits),
-        reply_markup=kb_started(),
-        parse_mode="HTML",
-    )
+    # НЕ отправляем уведомление здесь - worker отправит его сам
 
     return job_id, new_credits
