@@ -23,6 +23,8 @@ from app.db_adapter import (
 )
 from app.services.storage_factory import get_storage
 from worker.kie_client import create_task_sora_i2v, poll_record_info
+from worker.kie_error_classifier import classify_kie_error, should_retry, get_retry_delay, get_user_error_message, KieErrorType
+from worker.kie_key_rotator import get_rotator
 from worker.openai_prompter import build_prompt_with_gpt
 from worker.prompt_templates import TEMPLATES  # ✅ ВАЖНО
 
@@ -221,7 +223,7 @@ async def main():
                 script = build_script_for_job(job)
                 logger.info(f"📝 Generated script (first 200 chars): {script[:200]}...")
 
-                task_id = create_task_sora_i2v(prompt=script, image_url=image_url)
+                task_id, api_key = create_task_sora_i2v(prompt=script, image_url=image_url)
                 if not task_id:
                     raise RuntimeError("KIE: could not extract task_id")
                 
@@ -238,7 +240,7 @@ async def main():
                 
                 logger.info(f"⏳ Polling KIE for task {task_id}...")
                 # Увеличим таймаут до 6 минут (360 сек) для большей надежности
-                info = await asyncio.to_thread(poll_record_info, task_id, 360, 10)
+                info = await asyncio.to_thread(poll_record_info, task_id, api_key, 360, 10)
 
                 logger.info("\n==== KIE recordInfo raw ====")
                 logger.info(json.dumps(info, ensure_ascii=False, indent=2))
@@ -247,34 +249,47 @@ async def main():
                 fail_msg = extract_fail_message(info)
                 if fail_msg:
                     logger.warning(f"❌ KIE generation failed: {fail_msg}")
-                    await refund_credit(tg_user_id, 1)
-                    await update_job(job_id, {"status": "failed", "error": fail_msg, "finished_at": now_iso()})
                     
-                    # Определяем тип ошибки
-                    fail_msg_lower = fail_msg.lower()
-                    is_policy_violation = any(word in fail_msg_lower for word in [
-                        "policy", "content", "inappropriate", "violation", "rule", "guideline",
-                        "safety", "prohibited", "restricted", "denied", "rejected"
-                    ])
+                    # Классифицируем ошибку
+                    error_type, error_msg = classify_kie_error(info)
+                    logger.info(f"🔍 Error classified as: {error_type.value}")
                     
-                    if is_policy_violation:
-                        error_text = (
-                            "⚠️ <b>Вы нарушили правила SORA 2</b>\n\n"
-                            "Внимательно изучите требования к:\n"
-                            "• фото (чаще всего проблема в фото)\n"
-                            "• промпту\n\n"
-                            "1 кредит вернули на баланс ✅"
-                        )
+                    # Обновляем health rotator'а
+                    rotator = get_rotator()
+                    if error_type == KieErrorType.RATE_LIMIT:
+                        rotator.report_rate_limit(api_key)
+                    elif error_type == KieErrorType.BILLING:
+                        rotator.report_billing_error(api_key)
                     else:
-                        error_text = (
-                            "❌ <b>Произошла ошибка генерации</b>\n\n"
-                            "Обратитесь в службу поддержки: @kirbudilov\n\n"
-                            "1 кредит вернули на баланс ✅"
-                        )
+                        rotator.report_success(api_key)  # не проблема с ключом
+                    
+                    # Проверяем нужен ли retry
+                    if should_retry(error_type, attempts):
+                        retry_delay = get_retry_delay(error_type, attempts)
+                        logger.info(f"🔄 Will retry job {job_id} after {retry_delay}s (attempt {attempts})")
+                        
+                        # Возвращаем в очередь с задержкой
+                        await update_job(job_id, {"status": "queued"})
+                        
+                        # Уведомляем пользователя о временной ошибке (только для TEMPORARY)
+                        if error_type == KieErrorType.TEMPORARY:
+                            await bot.send_message(
+                                tg_user_id,
+                                get_user_error_message(error_type),
+                                parse_mode="HTML",
+                            )
+                        
+                        # Даем системе отдохнуть перед retry
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    
+                    # Финальный fail - возвращаем кредит и уведомляем
+                    await refund_credit(tg_user_id, 1)
+                    await update_job(job_id, {"status": "failed", "error": error_msg, "finished_at": now_iso()})
                     
                     await bot.send_message(
                         tg_user_id,
-                        error_text,
+                        get_user_error_message(error_type),
                         reply_markup=kb_result(kind),
                         parse_mode="HTML",
                     )
@@ -295,6 +310,11 @@ async def main():
                     continue
                 
                 logger.info(f"✅ Video URL found: {video_url}")
+                
+                # Отмечаем успешное использование API ключа
+                rotator = get_rotator()
+                rotator.report_success(api_key)
+                
                 logger.info(f"📥 Downloading video from {video_url}...")
                 data = await download_bytes(video_url)
                 logger.info(f"✅ Downloaded {len(data)} bytes")

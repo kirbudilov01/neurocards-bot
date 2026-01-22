@@ -85,6 +85,67 @@ async def handle_healthz(request):
     return web.Response(text="ok")
 
 
+async def handle_queue_stats(request):
+    """Endpoint для мониторинга очереди заданий"""
+    try:
+        from app.db_adapter import get_pool, DATABASE_TYPE
+        
+        if DATABASE_TYPE == "postgres":
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                # Считаем задания по статусам
+                queued = await conn.fetchval("SELECT COUNT(*) FROM jobs WHERE status = 'queued'")
+                processing = await conn.fetchval("SELECT COUNT(*) FROM jobs WHERE status = 'processing'")
+                
+                # Средний возраст задач в очереди (в минутах)
+                avg_wait = await conn.fetchval("""
+                    SELECT EXTRACT(EPOCH FROM (NOW() - AVG(created_at))) / 60
+                    FROM jobs WHERE status = 'queued'
+                """)
+                
+                # Количество активных воркеров (processing задачи + буфер)
+                # Каждый воркер берет задачу на ~5-10 минут
+                
+                return web.json_response({
+                    "status": "ok",
+                    "queue": {
+                        "queued": queued or 0,
+                        "processing": processing or 0,
+                        "total": (queued or 0) + (processing or 0)
+                    },
+                    "avg_wait_minutes": round(avg_wait or 0, 1),
+                    "workers_configured": int(os.getenv("WORKER_INSTANCES", "1")),
+                    "timestamp": asyncio.get_event_loop().time()
+                })
+        else:
+            # Supabase fallback
+            from app.db_adapter import supabase
+            
+            queued_res = await asyncio.to_thread(
+                lambda: supabase.table("jobs").select("id", count="exact").eq("status", "queued").execute()
+            )
+            processing_res = await asyncio.to_thread(
+                lambda: supabase.table("jobs").select("id", count="exact").eq("status", "processing").execute()
+            )
+            
+            return web.json_response({
+                "status": "ok",
+                "queue": {
+                    "queued": queued_res.count or 0,
+                    "processing": processing_res.count or 0,
+                    "total": (queued_res.count or 0) + (processing_res.count or 0)
+                },
+                "workers_configured": int(os.getenv("WORKER_INSTANCES", "1")),
+                "timestamp": asyncio.get_event_loop().time()
+            })
+    except Exception as e:
+        logger.error(f"❌ Error in queue_stats: {e}", exc_info=True)
+        return web.json_response({
+            "status": "error",
+            "error": str(e)
+        }, status=500)
+
+
 async def main():
     try:
         # Проверка обязательных переменных окружения
@@ -116,6 +177,7 @@ async def main():
         # Health check endpoints
         app.router.add_get("/", handle_healthz)
         app.router.add_get("/healthz", handle_healthz)
+        app.router.add_get("/queue_stats", handle_queue_stats)
 
         # Webhook endpoint
         SimpleRequestHandler(
