@@ -207,7 +207,7 @@ async def main():
                 tg_user_id = int(job["tg_user_id"])
 
                 attempts = int(job.get("attempts") or 0) + 1
-                await update_job(job_id, {"status": "processing", "started_at": now_iso(), "attempts": attempts})
+                await update_job(job_id, {"status": "processing", "started_at": "NOW()", "attempts": attempts})
                 logger.info(f"🔄 Job {job_id} attempt {attempts}")
 
                 kind = job.get("kind") or "reels"
@@ -285,7 +285,7 @@ async def main():
                     
                     # Финальный fail - возвращаем кредит и уведомляем
                     await refund_credit(tg_user_id, 1)
-                    await update_job(job_id, {"status": "failed", "error": error_msg, "finished_at": now_iso()})
+                    await update_job(job_id, {"status": "failed", "error": error_msg, "finished_at": "NOW()"})
                     
                     await bot.send_message(
                         tg_user_id,
@@ -300,7 +300,7 @@ async def main():
                 if not video_url:
                     logger.warning("❌ Video URL not found in KIE response")
                     await refund_credit(tg_user_id, 1)
-                    await update_job(job_id, {"status": "failed", "error": "no_video_url", "finished_at": now_iso()})
+                    await update_job(job_id, {"status": "failed", "error": "no_video_url", "finished_at": "NOW()"})
                     await bot.send_message(
                         tg_user_id,
                         "❌ Я дождался ответа KIE, но не нашёл ссылку на видео. Кредит вернул ✅",
@@ -322,7 +322,7 @@ async def main():
                 max_bytes = 45 * 1024 * 1024
                 if len(data) > max_bytes:
                     logger.info(f"⚠️ Video too large ({len(data)} bytes), sending URL instead")
-                    await update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": video_url})
+                    await update_job(job_id, {"status": "done", "finished_at": "NOW()", "output_url": video_url})
                     await bot.send_message(
                         tg_user_id,
                         f"✅ Видео готово! Ссылка:\n{video_url}",
@@ -336,7 +336,7 @@ async def main():
                         caption="✅ Видео готово!",
                         reply_markup=kb_result(kind),
                     )
-                    await update_job(job_id, {"status": "done", "finished_at": now_iso(), "output_url": video_url})
+                    await update_job(job_id, {"status": "done", "finished_at": "NOW()", "output_url": video_url})
                     logger.info(f"✅ Job {job_id} completed successfully")
 
             except Exception as e:
@@ -355,7 +355,7 @@ async def main():
                 
                 if 'job_id' in locals():
                     try:
-                        await update_job(job_id, {"status": "failed", "error": str(e), "finished_at": now_iso()})
+                        await update_job(job_id, {"status": "failed", "error": str(e), "finished_at": "NOW()"})
                     except Exception:
                         pass
                 
