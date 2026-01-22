@@ -245,15 +245,12 @@ async def on_wishes(message: Message, state: FSMContext):
             extra_wishes = txt
         await state.update_data(extra_wishes=extra_wishes)
 
-        credits = await safe_get_balance(message.from_user.id)
-        confirm_tpl = getattr(
-            texts,
-            "CONFIRM_COST",
-            "Генерация стоит <b>1 кредит</b>.\nТекущий баланс: <b>{credits}</b>\n\nЗапускаем?",
-        )
+        # Переход к выбору количества видео
+        await state.set_state(GenFlow.waiting_video_count)
         await message.answer(
-            confirm_tpl.format(credits=credits),
-            reply_markup=kb_confirm(),
+            "📊 <b>Сколько видео сделать?</b>\n\n"
+            "Выберите количество:",
+            reply_markup=kb_video_count(),
             parse_mode=PARSE_MODE,
         )
     except Exception as e:
