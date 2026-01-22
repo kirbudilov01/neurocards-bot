@@ -243,9 +243,16 @@ async def update_job_status(
     if DATABASE_TYPE == "postgres":
         pool = await get_pool()
         async with pool.acquire() as conn:
-            query = "UPDATE jobs SET status = $1, updated_at = NOW()"
+            query = "UPDATE jobs SET status = $1"
             params = [status]
             param_idx = 2
+            
+            # Устанавливаем started_at при переходе в processing
+            if status == 'processing':
+                query += ", started_at = NOW()"
+            # Устанавливаем finished_at при завершении
+            elif status in ('done', 'failed'):
+                query += ", finished_at = NOW()"
             
             if result_video_path is not None:
                 query += f", result_video_path = ${param_idx}"
@@ -335,7 +342,7 @@ async def fetch_next_queued_job() -> Optional[Dict[str, Any]]:
             row = await conn.fetchrow(
                 """
                 UPDATE jobs
-                SET status = 'processing', updated_at = NOW()
+                SET status = 'processing', started_at = NOW()
                 WHERE id = (
                     SELECT id FROM jobs
                     WHERE status = 'queued'

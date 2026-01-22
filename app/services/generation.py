@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from app import texts
@@ -5,6 +6,8 @@ from app.keyboards import kb_no_credits, kb_started
 from app.services.tg_files import download_photo_bytes
 from app.services.storage_factory import get_storage
 from app.db_adapter import get_job_by_idempotency_key, create_job_and_consume_credit, get_queue_position, safe_get_balance
+
+logger = logging.getLogger(__name__)
 
 
 async def start_generation(
@@ -46,11 +49,14 @@ async def start_generation(
         )
         job_id = result["job_id"]
         new_credits = result["new_credits"]
-    except Exception:
+    except Exception as e:
+        # Логируем реальную ошибку
+        logger.error(f"❌ Failed to create job: {e}", exc_info=True)
+        
         # если RPC упал (например, 'Not enough credits'), сообщим об этом
         await bot.send_message(
             tg_user_id,
-            getattr(texts, "NO_CREDITS", "❌ Недостаточно кредитов. Пополни баланс в личном кабинете."),
+            getattr(texts, "ERROR_GENERATION", "⚠️ Ошибка, попробуй ещё раз"),
             reply_markup=kb_no_credits(),
             parse_mode="HTML",
         )
