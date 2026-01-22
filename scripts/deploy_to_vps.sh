@@ -32,7 +32,7 @@ ssh ${SERVER_USER}@${SERVER_IP} << 'ENDSSH'
     apt update && apt upgrade -y
     
     # Устанавливаем необходимые пакеты
-    apt install -y python3.11 python3.11-venv python3-pip git postgresql postgresql-contrib nginx ufw
+    apt install -y python3 python3-venv python3-pip git postgresql postgresql-contrib nginx ufw
     
     # Настраиваем firewall
     ufw --force enable
@@ -63,14 +63,12 @@ ssh ${SERVER_USER}@${SERVER_IP} << 'ENDSSH'
     # Создаем базу данных
     sudo -u postgres psql << EOF
 \set ON_ERROR_STOP on
-DO \$\$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_database WHERE datname = 'neurocards') THEN
-        CREATE DATABASE neurocards;
-    END IF;
-END
-\$\$;
 
+-- Создаем базу данных (если не существует)
+SELECT 'CREATE DATABASE neurocards'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'neurocards')\gexec
+
+-- Создаем пользователя (если не существует)
 DO \$\$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_user WHERE usename = 'botuser') THEN
@@ -79,9 +77,14 @@ BEGIN
 END
 \$\$;
 
+-- Даем права
 GRANT ALL PRIVILEGES ON DATABASE neurocards TO botuser;
 \c neurocards
 GRANT ALL ON SCHEMA public TO botuser;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO botuser;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO botuser;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO botuser;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO botuser;
 EOF
     
     # Сохраняем пароль в файл
@@ -100,33 +103,29 @@ echo -e "${YELLOW}📥 Шаг 3: Клонирование репозитория
 ssh ${SERVER_USER}@${SERVER_IP} << ENDSSH
     set -e
     
-    # Переключаемся на пользователя botuser
-    su - botuser << 'EOFSU'
-        cd ~
-        
-        # Удаляем старый репозиторий если есть
-        rm -rf neurocards-bot
-        
-        # Клонируем репозиторий
-        git clone https://github.com/$(git config user.name || echo "YOUR_USERNAME")/neurocards-bot.git
-        
-        cd neurocards-bot
-        
-        # Создаем виртуальное окружение
-        python3.11 -m venv venv
-        source venv/bin/activate
-        
-        # Обновляем pip
-        pip install --upgrade pip
-        
-        # Устанавливаем зависимости
-        pip install -r requirements.txt
-        
-        # Устанавливаем дополнительные пакеты
-        pip install asyncpg aiofiles
-        
-        echo "✅ Репозиторий склонирован и зависимости установлены"
-EOFSU
+    # Создаём директорию проекта
+    mkdir -p /var/neurocards
+    cd /var/neurocards
+    
+    # Удаляем старый репозиторий если есть
+    rm -rf neurocards-bot
+    
+    # Клонируем репозиторий
+    git clone https://github.com/kirbudilov01/neurocards-bot.git
+    
+    cd neurocards-bot
+    
+    # Создаем виртуальное окружение с Python 3
+    python3 -m venv venv
+    source venv/bin/activate
+    
+    # Обновляем pip
+    pip install --upgrade pip
+    
+    # Устанавливаем зависимости
+    pip install -r requirements.txt
+    
+    echo "✅ Репозиторий склонирован и зависимости установлены"
 ENDSSH
 
 echo ""
