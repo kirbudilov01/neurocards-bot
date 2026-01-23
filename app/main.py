@@ -5,6 +5,8 @@ import sys
 from aiohttp import web
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiohttp_socks import ProxyConnector
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiogram.fsm.storage.memory import MemoryStorage  # 🔥 КРИТИЧЕСКИ ВАЖНО
 
@@ -18,7 +20,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from app.config import BOT_TOKEN, PUBLIC_BASE_URL
+from app.config import BOT_TOKEN, PUBLIC_BASE_URL, WEBHOOK_SECRET_TOKEN
+from app.config import load_proxies_from_file, PROXY_FILE, PROXY_COOLDOWN
+from app.proxy_rotator import init_proxy_rotator, get_proxy_rotator
 from app.handlers import start, menu_and_flow, fallback
 from app.db_adapter import init_db_pool, close_db_pool
 
@@ -27,7 +31,41 @@ WEBHOOK_PATH = "/telegram/webhook"
 WEBHOOK_URL = f"{PUBLIC_BASE_URL.rstrip('/')}{WEBHOOK_PATH}"
 
 
-from app.config import BOT_TOKEN, WEBHOOK_SECRET_TOKEN
+def create_bot_with_proxy() -> Bot:
+    """
+    Создать Bot с поддержкой прокси ротации.
+    
+    Returns:
+        Bot инстанс с настроенной сессией
+    """
+    # Загрузить прокси
+    proxies = load_proxies_from_file(PROXY_FILE)
+    
+    if not proxies:
+        logger.warning("⚠️ No proxies found, bot will work without proxy!")
+        return Bot(token=BOT_TOKEN)
+    
+    # Инициализировать ротатор
+    init_proxy_rotator(proxies, cooldown_seconds=PROXY_COOLDOWN)
+    rotator = get_proxy_rotator()
+    
+    # Получить первый прокси
+    proxy = rotator.get_next_proxy()
+    if not proxy:
+        logger.error("❌ All proxies are blocked! Bot will work without proxy")
+        return Bot(token=BOT_TOKEN)
+    
+    # Форматировать для aiohttp (нужен http:// формат для aiohttp-socks)
+    proxy_url = rotator.format_for_aiohttp(proxy)
+    logger.info(f"🔄 Bot using proxy: {rotator._mask_proxy(proxy)}")
+    
+    # Создать connector с прокси
+    connector = ProxyConnector.from_url(proxy_url)
+    
+    # Создать сессию с connector - aiogram сам создаст ClientSession внутри
+    session = AiohttpSession(connector=connector)
+    
+    return Bot(token=BOT_TOKEN, session=session)
 
 async def on_startup(bot: Bot):
     """
@@ -156,8 +194,8 @@ async def main():
         
         logger.info("Starting bot initialization...")
         
-        # 🔑 Бот
-        bot = Bot(BOT_TOKEN)
+        # 🔑 Бот с поддержкой прокси
+        bot = create_bot_with_proxy()
 
         # ✅ FSM будет РАБОТАТЬ
         dp = Dispatcher(storage=MemoryStorage())

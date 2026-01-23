@@ -16,6 +16,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 COPY worker/ ./worker/
 COPY database/ ./database/
+
+# Копируем proxies.txt
+COPY proxies.txt /app/proxies.txt
+
 COPY docker-entrypoint-worker.sh /app/
 
 # Создаем непривилегированного пользователя

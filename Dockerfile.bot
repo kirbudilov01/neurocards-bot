@@ -16,13 +16,23 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 COPY database/ ./database/
 
-# Создаем непривилегированного пользователя
-RUN useradd -m -u 1000 botuser && chown -R botuser:botuser /app
+# Копируем proxies.txt
+COPY proxies.txt /app/proxies.txt
+
+# Копируем entrypoint скрипт
+COPY docker-entrypoint-bot.sh /app/
+
+# Создаем непривилегированного пользователя и даем права
+RUN useradd -m -u 1000 botuser && \
+    chown -R botuser:botuser /app && \
+    chmod +x /app/docker-entrypoint-bot.sh
+
 USER botuser
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD python -c "import httpx; httpx.get('http://localhost:8080/healthz', timeout=5.0)" || exit 1
 
-# Запуск бота
+# Entrypoint для создания storage директорий
+ENTRYPOINT ["/app/docker-entrypoint-bot.sh"]
 CMD ["python", "-m", "app.main"]

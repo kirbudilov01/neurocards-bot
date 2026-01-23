@@ -81,6 +81,31 @@ def kb_no_credits():
     ])
 
 
+# ========== VIDEO READY (Phase 1.5: Cyclic Flow) ==========
+def kb_video_ready():
+    """Кнопки после получения готового видео - циклический флоу"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Сделать еще с этим товаром", callback_data="make_another_same_product")],
+        [InlineKeyboardButton(text="🏠 Назад в меню", callback_data="back_to_menu")],
+    ])
+
+
+# ========== ERROR HANDLING (Phase 2) ==========
+def kb_error_retry():
+    """Кнопки при ошибке - возможность retry"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Попробовать еще раз", callback_data="retry_generation")],
+        [InlineKeyboardButton(text="🏠 Назад в меню", callback_data="back_to_menu")],
+    ])
+
+
+def kb_error_no_retry():
+    """Кнопки при критической ошибке - только меню"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏠 Назад в меню", callback_data="back_to_menu")],
+    ])
+
+
 # после “генерация запущена”
 def kb_started():
     return InlineKeyboardMarkup(inline_keyboard=[

@@ -14,15 +14,24 @@ logger = logging.getLogger(__name__)
 
 
 def get_redis_connection() -> Redis:
-    """Получить подключение к Redis"""
+    """Получить подключение к Redis с увеличенными таймаутами"""
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    return Redis.from_url(redis_url, decode_responses=True)
+    # Увеличиваем таймауты для долгих задач (30 минут)
+    return Redis.from_url(
+        redis_url, 
+        decode_responses=True,
+        socket_timeout=1800,  # 30 минут
+        socket_connect_timeout=30,  # 30 секунд на подключение
+        socket_keepalive=True,  # Keep-alive для стабильности
+        health_check_interval=30  # Проверка здоровья каждые 30 сек
+    )
 
 
 def get_queue(name: str = "neurocards") -> Queue:
     """Получить очередь задач"""
     redis_conn = get_redis_connection()
-    return Queue(name, connection=redis_conn)
+    # default_timeout=1800 (30 минут) - для всех jobs в очереди
+    return Queue(name, connection=redis_conn, default_timeout=1800)
 
 
 def enqueue_job(
@@ -56,7 +65,7 @@ def enqueue_job(
         "worker.rq_worker.process_video_job",  # Полный путь к функции
         job_data,
         job_id=job_id,  # Используем наш UUID как ID в Redis
-        timeout="30m",  # Таймаут 30 минут на обработку
+        timeout=1800,  # Таймаут 30 минут на обработку (в секундах)
         result_ttl=3600,  # Результат храним 1 час
         failure_ttl=86400,  # Ошибки храним 24 часа
     )

@@ -62,22 +62,11 @@ if DATABASE_TYPE == "postgres":
             logger.info("✅ PostgreSQL pool closed")
 
 else:
-    # Используем Supabase SDK (для обратной совместимости)
-    from supabase import create_client, Client
-    from app.config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-    
-    supabase: Client = None  # Инициализация отложена
-    
-    # Заглушки для совместимости API
-    async def init_db_pool():
-        logger.info("✅ Using Supabase client (no pool needed)")
-        return None
-    
-    async def get_pool():
-        return None
-    
-    async def close_db_pool():
-        logger.info("✅ Supabase client closed")
+    # PostgreSQL is required - Supabase support removed
+    raise RuntimeError(
+        "USE_POSTGRES must be 'true'. Supabase support has been removed. "
+        "Please set USE_POSTGRES=true and configure PostgreSQL connection."
+    )
 
 
 # ---------------- USERS ----------------
@@ -105,15 +94,16 @@ async def get_or_create_user(tg_user_id: int, username: Optional[str] = None) ->
                     user["username"] = username
                 return user
             
-            # Создаем нового пользователя
+            # Создаем нового пользователя с 2 бесплатными токенами
             row = await conn.fetchrow(
                 """
-                INSERT INTO users (tg_user_id, username)
-                VALUES ($1, $2)
+                INSERT INTO users (tg_user_id, username, credits)
+                VALUES ($1, $2, $3)
                 RETURNING *
                 """,
-                tg_user_id, username
+                tg_user_id, username, 2  # ✅ ДАТЬ 2 БЕСПЛАТНЫХ ТОКЕНА
             )
+            logger.info(f"🎉 New user {tg_user_id} created with 2 free tokens")
             return dict(row)
     
     else:
@@ -189,7 +179,12 @@ async def create_job_and_consume_credit(
             if not row:
                 raise Exception("Insufficient credits or duplicate job")
             
-            return dict(row)
+            # RPC возвращает JSON в первой колонке
+            result_json = row[0]
+            if isinstance(result_json, str):
+                import json
+                return json.loads(result_json)
+            return result_json
     
     else:
         res = await run_blocking(
@@ -328,6 +323,65 @@ async def refund_credit(tg_user_id: int) -> None:
         await run_blocking(
             supabase.rpc("refund_credit", {"p_tg_user_id": tg_user_id}).execute
         )
+
+
+# ============ Phase 2: Retry & Error Handling ============
+
+async def increment_job_retry(job_id: str) -> int:
+    """
+    Увеличивает счетчик retry попыток для job
+    Возвращает новое значение retry_count
+    """
+    if DATABASE_TYPE == "postgres":
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            # Проверяем есть ли колонка retry_count, если нет - возвращаем 0
+            row = await conn.fetchrow(
+                """
+                UPDATE jobs 
+                SET retry_count = COALESCE(retry_count, 0) + 1
+                WHERE id = $1
+                RETURNING COALESCE(retry_count, 1) as retry_count
+                """,
+                job_id
+            )
+            return row['retry_count'] if row else 1
+    else:
+        # Supabase - через RPC или прямой UPDATE
+        res = await run_blocking(
+            supabase.table("jobs")
+            .select("retry_count")
+            .eq("id", job_id)
+            .execute
+        )
+        current = (res.data[0].get("retry_count") or 0) if res.data else 0
+        new_count = current + 1
+        
+        await run_blocking(
+            supabase.table("jobs")
+            .update({"retry_count": new_count})
+            .eq("id", job_id)
+            .execute
+        )
+        return new_count
+
+
+async def mark_job_failed_with_refund(
+    job_id: str,
+    tg_user_id: int,
+    error_message: str
+) -> None:
+    """
+    Помечает job как failed + возвращает кредит пользователю
+    Используется при критических ошибках (USER_VIOLATION, BILLING, превышен retry)
+    """
+    # Обновляем статус job
+    await update_job_status(job_id, "failed", error_message=error_message)
+    
+    # Возвращаем кредит
+    await refund_credit(tg_user_id)
+    
+    logger.info(f"❌ Job {job_id} marked as failed, credit refunded to user {tg_user_id}")
 
 
 # ---------------- WORKER FUNCTIONS ----------------

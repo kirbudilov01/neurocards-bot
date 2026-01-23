@@ -1,5 +1,10 @@
 import os
+import time
 import httpx
+import logging
+from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 def _req(name: str) -> str:
@@ -7,6 +12,44 @@ def _req(name: str) -> str:
     if not v:
         raise RuntimeError(f"Missing env var: {name}")
     return v
+
+
+def load_proxies_from_file(filepath: str) -> list:
+    """Загрузить прокси из файла."""
+    try:
+        if not os.path.exists(filepath):
+            return []
+        with open(filepath, 'r') as f:
+            return [line.strip() for line in f if line.strip() and not line.startswith('#')]
+    except Exception as e:
+        logger.error(f"Failed to load proxies: {e}")
+        return []
+
+
+def get_proxy_for_openai() -> Optional[dict]:
+    """
+    Получить прокси для OpenAI запроса.
+    
+    Returns:
+        Dict с настройками прокси для httpx или None
+    """
+    proxy_file = os.getenv("PROXY_FILE", "/app/proxies.txt")
+    proxies = load_proxies_from_file(proxy_file)
+    
+    if not proxies:
+        return None
+    
+    # Берем первый рабочий прокси (можно добавить ротацию позже)
+    proxy = proxies[0]
+    parts = proxy.split(":")
+    
+    if len(parts) == 4:
+        ip, port, user, password = parts
+        proxy_url = f"http://{user}:{password}@{ip}:{port}"
+        logger.debug(f"🔄 Using proxy for OpenAI: {ip}:{port}")
+        return {"http://": proxy_url, "https://": proxy_url}
+    
+    return None
 
 
 def build_prompt_with_gpt(system: str, instructions: str, product_text: str, extra_wishes: str | None) -> str:
@@ -22,26 +65,66 @@ def build_prompt_with_gpt(system: str, instructions: str, product_text: str, ext
     )
 
     payload = {
-        "model": "gpt-4.1-mini",
+        "model": "gpt-4o-mini",
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user_msg},
         ],
         "temperature": 0.7,
+        "max_tokens": 500,
     }
 
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+    
+    # Получить прокси через ProxyRotator (уже инициализирован в video_processor)
+    from app.proxy_rotator import get_proxy_rotator
+    
+    proxy_rotator = get_proxy_rotator()
+    proxy_url = proxy_rotator.get_next_proxy() if proxy_rotator else None
+    
+    if proxy_url:
+        logger.info(f"🔄 OpenAI request will use proxy: {proxy_url[:30]}...")
+    else:
+        logger.warning("⚠️ OpenAI request WITHOUT proxy (may fail in Russia)")
 
-    with httpx.Client(timeout=120.0) as client:
-        r = client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers=headers,
-            json=payload,
-        )
-        r.raise_for_status()
-        data = r.json()
-
-    return data["choices"][0]["message"]["content"].strip()
+    # Retry логика: 3 попытки с паузой
+    last_error = None
+    for attempt in range(3):
+        try:
+            # httpx.Client(proxies=...) принимает строку или dict вида {"all://": "url"}
+            client_kwargs = {"timeout": 30.0}
+            if proxy_url:
+                client_kwargs["proxies"] = proxy_url  # передаём строку напрямую
+            
+            with httpx.Client(**client_kwargs) as client:
+                r = client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers=headers,
+                    json=payload,
+                )
+                r.raise_for_status()
+                data = r.json()
+                
+                # Безопасная распаковка
+                if not data.get("choices"):
+                    raise ValueError("Empty choices in GPT response")
+                
+                content = data["choices"][0].get("message", {}).get("content", "").strip()
+                
+                if not content:
+                    raise ValueError("Empty content from GPT")
+                
+                logger.info(f"✅ GPT prompt generated (attempt {attempt + 1}): {content[:80]}...")
+                return content
+                
+        except Exception as e:
+            last_error = e
+            logger.warning(f"⚠️ GPT attempt {attempt + 1} failed: {e}")
+            if attempt < 2:  # не спим на последней попытке
+                time.sleep(2)
+    
+    # Если все попытки провалились
+    raise last_error or RuntimeError("GPT prompt generation failed")

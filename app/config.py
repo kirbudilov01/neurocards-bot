@@ -1,5 +1,8 @@
 from dotenv import load_dotenv; import os; load_dotenv()
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
@@ -14,11 +17,30 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 STORAGE_TYPE = os.getenv("STORAGE_TYPE", "local")
 STORAGE_BASE_PATH = os.getenv("STORAGE_BASE_PATH", "/app/storage")
 
-# Supabase (для обратной совместимости, если нужно)
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-SUPABASE_BUCKET_INPUTS = os.getenv("SUPABASE_BUCKET_INPUTS", "inputs")
-SUPABASE_BUCKET_OUTPUTS = os.getenv("SUPABASE_BUCKET_OUTPUTS", "outputs")
+# Supabase support removed - using PostgreSQL only
 
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "")
 WEBHOOK_SECRET_TOKEN = os.getenv("WEBHOOK_SECRET_TOKEN")
+
+# Support & UI
+SUPPORT_URL = os.getenv("SUPPORT_URL", "https://t.me/fabricbothelper")
+
+# Proxy Configuration
+PROXY_FILE = os.getenv("PROXY_FILE", "/app/proxies.txt")
+PROXY_COOLDOWN = int(os.getenv("PROXY_COOLDOWN", "300"))  # 5 минут по умолчанию
+
+def load_proxies_from_file(filepath: str) -> list:
+    """Загрузить прокси из файла (один прокси на строку в формате ip:port:user:pass)."""
+    try:
+        if not os.path.exists(filepath):
+            logger.warning(f"⚠️ Proxy file not found: {filepath}")
+            return []
+        
+        with open(filepath, 'r') as f:
+            proxies = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+        
+        logger.info(f"✅ Loaded {len(proxies)} proxies from {filepath}")
+        return proxies
+    except Exception as e:
+        logger.error(f"❌ Failed to load proxies from {filepath}: {e}")
+        return []

@@ -88,8 +88,8 @@ class LocalStorage:
         Returns:
             Полный URL для доступа к файлу
         """
-        base_url = os.getenv("BASE_URL", "http://localhost:8000")
-        return f"{base_url}/{bucket}/{filename}"
+        base_url = os.getenv("PUBLIC_BASE_URL") or os.getenv("BASE_URL", "http://localhost:8000")
+        return f"{base_url}/storage/{bucket}/{filename}"
     
     async def download_file(self, bucket: str, filename: str) -> bytes:
         """

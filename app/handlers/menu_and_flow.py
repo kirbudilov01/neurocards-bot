@@ -1,5 +1,5 @@
 import logging
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, Message, FSInputFile
 from aiogram.fsm.context import FSMContext
 
@@ -15,8 +15,9 @@ from app.keyboards import (
     kb_topup,     # ✅ ВАЖНО
     kb_video_count,  # ✅ Новая клавиатура
 )
-from app.db_adapter import get_or_create_user, safe_get_balance
+from app.db_adapter import get_or_create_user, safe_get_balance, get_user_jobs
 from app.services.generation import start_generation
+from app.utils import ensure_dict
 
 router = Router()
 
@@ -53,10 +54,72 @@ async def back_to_menu(cb: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith("again:"))
-async def again(cb: CallbackQuery, state: FSMContext):
-    await cb.answer("Ок, ещё раз")
-    await state.clear()
-    await show_menu(cb.message, MENU_TEXT, kb_menu())
+async def again(cb: CallbackQuery, state: FSMContext, bot: Bot):
+    """Повторная генерация видео с теми же параметрами"""
+    try:
+        await cb.answer("🔁 Запускаю еще одно видео...")
+        
+        kind = cb.data.split(":", 1)[1]  # Извлекаем тип (reels/shorts/ugc)
+        tg_user_id = cb.from_user.id
+        
+        # Получаем последнюю задачу пользователя
+        user_jobs = await get_user_jobs(tg_user_id, limit=1)
+        if not user_jobs:
+            await cb.message.answer(
+                "⚠️ Не найду предыдущую задачу. Загрузи фото заново.",
+                reply_markup=kb_back_to_menu(),
+                parse_mode=PARSE_MODE,
+            )
+            await state.clear()
+            return
+        
+        last_job = user_jobs[0]
+        photo_path = last_job.get("input_photo_path")
+        product_info = last_job.get("product_info", {})
+        
+        if not photo_path:
+            await cb.message.answer(
+                "⚠️ Не удалось восстановить фото. Загрузи заново.",
+                reply_markup=kb_back_to_menu(),
+                parse_mode=PARSE_MODE,
+            )
+            await state.clear()
+            return
+        
+        # Отправляем стартовое сообщение
+        await cb.message.answer(
+            f"✅ <b>Принял!</b>\n\n"
+            f"🎬 Генерация видео запущена!\n\n"
+            f"⏱ <b>Ожидайте</b> — это может занять от 1 до 30 минут в зависимости от загруженности Sora 2.\n\n"
+            f"Я пришлю результаты сюда по мере готовности.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🔁 Сделать еще видео", callback_data=f"again:{kind}")
+            ]]),
+            parse_mode=PARSE_MODE,
+        )
+        
+        # Запускаем генерацию с теми же параметрами
+        idempotency_key = f"again_{cb.id}"
+        await start_generation(
+            bot=bot,
+            tg_user_id=tg_user_id,
+            idempotency_key=idempotency_key,
+            photo_file_id=photo_path,  # Используем сохраненный путь
+            kind=kind,
+            product_info=product_info,  # Переиспользуем информацию о товаре
+            extra_wishes=last_job.get("extra_wishes", ""),
+            template_id=last_job.get("template_id", "ugc"),
+        )
+        
+        await state.clear()
+        
+    except Exception as e:
+        logging.error(f"Error in again handler: {e}", exc_info=True)
+        await cb.message.answer(
+            "⚠️ Ошибка, попробуй ещё раз",
+            reply_markup=kb_back_to_menu(),
+            parse_mode=PARSE_MODE,
+        )
 
 
 @router.callback_query(F.data == "cabinet")
@@ -123,8 +186,18 @@ async def make_reels(cb: CallbackQuery, state: FSMContext):
     await state.update_data(kind="reels")
     await state.set_state(GenFlow.waiting_photo)
 
+    # ✅ Show user their current balance
+    balance = await safe_get_balance(cb.from_user.id)
+    ask_photo_text = getattr(texts, "ASK_PHOTO", "Пришли фото товара (без людей в кадре).")
+    
+    full_text = (
+        f"{ask_photo_text}\n\n"
+        f"💳 <b>Ваш баланс: {balance} {'кредит' if balance == 1 else 'кредитов'}</b>\n"
+        f"<i>Каждое видео стоит 1 кредит</i>"
+    )
+
     await cb.message.answer(
-        getattr(texts, "ASK_PHOTO", "Пришли фото товара (без людей в кадре)."),
+        full_text,
         reply_markup=kb_back_to_menu(),
         parse_mode=PARSE_MODE,
     )
@@ -332,12 +405,15 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
             await state.clear()
             return
 
-        # Отправляем сразу уведомление о начале генерации
+        # Отправляем сразу уведомление о начале генерации с кнопкой для еще одного видео
         await cb.message.answer(
             f"✅ <b>Принял!</b>\n\n"
             f"🎬 Генерация <b>{video_count} {'видео' if video_count == 1 else 'видео'}</b> запущена!\n\n"
             f"⏱ <b>Ожидайте</b> — это может занять от 1 до 30 минут в зависимости от загруженности Sora 2.\n\n"
             f"Я пришлю результаты сюда по мере готовности.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🔁 Сделать еще видео", callback_data=f"again:{kind}")
+            ]]),
             parse_mode=PARSE_MODE,
         )
 
@@ -392,10 +468,7 @@ async def retry_same_product(cb: CallbackQuery, state: FSMContext):
         return
     
     # Восстанавливаем данные в state
-    import json
-    product_info = job["product_info"]
-    if isinstance(product_info, str):
-        product_info = json.loads(product_info)
+    product_info = ensure_dict(job["product_info"])
     
     await state.update_data(
         photo_file_id=job["input_photo_path"],

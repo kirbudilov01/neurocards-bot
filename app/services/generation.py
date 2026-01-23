@@ -1,5 +1,6 @@
 import logging
 import uuid
+import json
 
 from app import texts
 from app.keyboards import kb_no_credits, kb_started
@@ -7,6 +8,7 @@ from app.services.tg_files import download_photo_bytes
 from app.services.storage_factory import get_storage
 from app.services.redis_queue import enqueue_job, get_job_status
 from app.db_adapter import get_job_by_idempotency_key, create_job_and_consume_credit, safe_get_balance
+from app.utils import ensure_json_string
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +40,16 @@ async def start_generation(
     await storage.upload_input_photo(input_path, photo_bytes)
 
     # 4) создать job и списать кредит атомарно
+    # Конвертируем product_info в JSON string для PostgreSQL JSONB
+    prompt_input_str = ensure_json_string(product_info)
+    
     try:
         result = await create_job_and_consume_credit(
             tg_user_id=tg_user_id,
             template_type=kind,
             idempotency_key=idempotency_key,
             photo_path=input_path,
-            prompt_input=product_info,
+            prompt_input=prompt_input_str,
         )
         job_id = result["job_id"]
         new_credits = result["new_credits"]
@@ -61,7 +66,8 @@ async def start_generation(
         )
         # чтобы вызывающий код не падал
         return None, None
-5) Добавить задачу в Redis очередь
+
+    # 5) Добавить задачу в Redis очередь
     try:
         enqueue_job(
             job_id=str(job_id),
@@ -73,7 +79,7 @@ async def start_generation(
         )
         logger.info(f"✅ Job {job_id} added to Redis queue")
     except Exception as e:
-        logger.error(f"❌ Failed to enqueue job {job_id}: {e}", exc_info=True)xception:
+        logger.error(f"❌ Failed to enqueue job {job_id}: {e}", exc_info=True)
         pass
 
     # НЕ отправляем уведомление здесь - worker отправит его сам

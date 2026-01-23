@@ -20,7 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def process_video_job(job_data: dict) -> dict:
+def process_video_job(job_data: dict, **kwargs) -> dict:
     """
     Главная функция обработки задачи (вызывается из RQ)
     Это синхронная обертка над async функцией
@@ -34,6 +34,7 @@ def process_video_job(job_data: dict) -> dict:
             "template_id": str,
             "extra_wishes": str | None
         }
+        **kwargs: дополнительные параметры от RQ (timeout и т.д.)
     
     Returns:
         dict: {"success": bool, "output_url": str | None, "error": str | None}

@@ -22,12 +22,14 @@ def create_task_sora_i2v(prompt: str, image_url: str) -> tuple[str, str]:
     rotator = get_rotator()
     api_key = rotator.get_key()
     
+    # Усиливаем соответствие входному изображению
     payload = {
         "model": "sora-2-image-to-video",
         "input": {
-            "prompt": prompt,
+            "prompt": f"{prompt}. Important: preserve the exact appearance of the product from the photo - color, shape, size, all details must match.",
             "image_urls": [image_url],
             "n_frames": "15",
+            "aspect_ratio": "9:16",  # Вертикальный формат для Reels/TikTok
             "remove_watermark": True,
         },
     }
