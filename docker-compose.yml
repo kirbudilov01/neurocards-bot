@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+<<<<<<< HEAD
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
@@ -73,10 +74,29 @@ services:
       - neurocards
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/healthz || exit 1"]
+=======
+  # Телеграм бот (веб-сервис, webhook)
+  bot:
+    build: .
+    container_name: neurocards-bot
+    command: python -m app.main
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
+      - DATABASE_URL=${DATABASE_URL}
+      - WEBHOOK_SECRET_TOKEN=${WEBHOOK_SECRET_TOKEN:-random_secret_token}
+    ports:
+      - "10000:10000"
+    network_mode: host
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10000/healthz"]
+>>>>>>> 8f6520fa9541fa7c865a7c36d6faea7967bcf8fc
       interval: 30s
       timeout: 10s
       retries: 3
 
+<<<<<<< HEAD
   # Worker (Background Job Processor) - можно масштабировать
   worker:
     build:
@@ -132,3 +152,22 @@ volumes:
   postgres_data:
   redis_data:
   storage_data:
+=======
+  # Background Worker (масштабируемый)
+  worker:
+    build: .
+    command: python -m worker.worker
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - KIE_API_KEY=${KIE_API_KEY}
+      - KIE_BASE_URL=${KIE_BASE_URL:-https://api.kie.ai}
+      - KIE_CREATE_TASK_URL=${KIE_CREATE_TASK_URL:-https://api.kie.ai/api/v1/jobs/createTask}
+      - KIE_RECORD_INFO_URL=${KIE_RECORD_INFO_URL:-https://api.kie.ai/api/v1/jobs/recordInfo}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com}
+      - DATABASE_URL=${DATABASE_URL}
+    network_mode: host
+    restart: unless-stopped
+    deploy:
+      replicas: 5  # 🔥 5 воркеров для параллельной обработки
+>>>>>>> 8f6520fa9541fa7c865a7c36d6faea7967bcf8fc

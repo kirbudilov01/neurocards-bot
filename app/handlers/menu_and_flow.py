@@ -468,7 +468,14 @@ async def retry_same_product(cb: CallbackQuery, state: FSMContext):
         return
     
     # Восстанавливаем данные в state
+<<<<<<< HEAD
     product_info = ensure_dict(job["product_info"])
+=======
+    import json
+    product_info = job["product_info"]
+    if isinstance(product_info, str):
+        product_info = json.loads(product_info)
+>>>>>>> 8f6520fa9541fa7c865a7c36d6faea7967bcf8fc
     
     await state.update_data(
         photo_file_id=job["input_photo_path"],

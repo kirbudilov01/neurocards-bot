@@ -49,7 +49,11 @@ async def start_generation(
             template_type=kind,
             idempotency_key=idempotency_key,
             photo_path=input_path,
+<<<<<<< HEAD
             prompt_input=prompt_input_str,
+=======
+            prompt_input=product_info,
+>>>>>>> 8f6520fa9541fa7c865a7c36d6faea7967bcf8fc
         )
         job_id = result["job_id"]
         new_credits = result["new_credits"]
