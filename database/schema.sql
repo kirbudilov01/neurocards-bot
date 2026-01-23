@@ -1,5 +1,6 @@
 -- Complete schema for neurocards-bot database
--- Run this in your Supabase SQL editor or local PostgreSQL
+-- PostgreSQL schema for VPS deployment
+-- Run this on your local PostgreSQL instance
 
 -- ===================================
 -- USERS TABLE
@@ -22,6 +23,7 @@ CREATE INDEX IF NOT EXISTS idx_users_tg_user_id ON public.users(tg_user_id);
 CREATE TABLE IF NOT EXISTS public.jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    tg_user_id BIGINT,  -- Денормализация для быстрого поиска
     idempotency_key TEXT UNIQUE,
     kind TEXT DEFAULT 'reels',
     template_id TEXT DEFAULT 'ugc',
@@ -40,6 +42,7 @@ CREATE TABLE IF NOT EXISTS public.jobs (
 
 -- Indexes for efficient queries
 CREATE INDEX IF NOT EXISTS idx_jobs_user_id ON public.jobs(user_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_tg_user_id ON public.jobs(tg_user_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON public.jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON public.jobs(created_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_idempotency_key ON public.jobs(idempotency_key);
@@ -51,110 +54,100 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status_created_at ON public.jobs(status, cre
 -- RPC FUNCTIONS
 -- ===================================
 
--- Function: Create job and consume credit atomically
+-- Function to create job and consume credit atomically
 CREATE OR REPLACE FUNCTION create_job_and_consume_credit(
     p_tg_user_id BIGINT,
+    p_template_type TEXT,
     p_idempotency_key TEXT,
-    p_kind TEXT,
-    p_input_photo_path TEXT,
-    p_product_info JSONB,
-    p_extra_wishes TEXT,
-    p_template_id TEXT
-)
-RETURNS TABLE(job_id UUID, new_credits INT)
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
+    p_photo_path TEXT,
+    p_prompt_input JSONB
+) RETURNS JSON AS $$
 DECLARE
-    v_job_id UUID;
-    v_existing_job_id UUID;
     v_user_id UUID;
-    v_user_credits INT;
     v_new_credits INT;
+    v_job_id UUID;
+    v_result JSON;
 BEGIN
-    -- 1. Check for existing job with same idempotency key
-    SELECT id INTO v_existing_job_id FROM public.jobs WHERE idempotency_key = p_idempotency_key;
-    IF v_existing_job_id IS NOT NULL THEN
-        -- Job exists, return it with current credits
-        SELECT credits INTO v_new_credits FROM public.users WHERE tg_user_id = p_tg_user_id;
-        RETURN QUERY SELECT v_existing_job_id, COALESCE(v_new_credits, 0);
-        RETURN;
+    -- Get or create user
+    INSERT INTO users (tg_user_id)
+    VALUES (p_tg_user_id)
+    ON CONFLICT (tg_user_id) DO UPDATE SET updated_at = NOW()
+    RETURNING id, credits INTO v_user_id, v_new_credits;
+
+    -- Check if user has enough credits
+    IF v_new_credits < 1 THEN
+        RAISE EXCEPTION 'Not enough credits';
     END IF;
 
-    -- 2. Get user and lock row
-    SELECT id, credits INTO v_user_id, v_user_credits 
-    FROM public.users 
-    WHERE tg_user_id = p_tg_user_id 
-    FOR UPDATE;
+    -- Deduct credit
+    UPDATE users
+    SET credits = credits - 1,
+        updated_at = NOW()
+    WHERE id = v_user_id
+    RETURNING credits INTO v_new_credits;
 
-    -- 3. Validate user exists
-    IF v_user_id IS NULL THEN
-        RAISE EXCEPTION 'User with tg_user_id % not found', p_tg_user_id;
-    END IF;
-
-    -- 4. Check credits
-    IF v_user_credits IS NULL OR v_user_credits < 1 THEN
-        RAISE EXCEPTION 'Not enough credits (have: %, need: 1)', COALESCE(v_user_credits, 0);
-    END IF;
-
-    -- 5. Decrement credits
-    v_new_credits := v_user_credits - 1;
-    UPDATE public.users SET credits = v_new_credits, updated_at = NOW() WHERE id = v_user_id;
-
-    -- 6. Create job
-    INSERT INTO public.jobs (
+    -- Create job
+    INSERT INTO jobs (
         user_id,
-        idempotency_key,
+        tg_user_id,
         kind,
+        template_id,
+        idempotency_key,
         input_photo_path,
         product_info,
-        extra_wishes,
-        template_id,
         status
-    )
-    VALUES (
+    ) VALUES (
         v_user_id,
+        p_tg_user_id,
+        p_template_type,
+        'ugc',
         p_idempotency_key,
-        p_kind,
-        p_input_photo_path,
-        p_product_info,
-        p_extra_wishes,
-        p_template_id,
+        p_photo_path,
+        p_prompt_input,
         'queued'
     )
     RETURNING id INTO v_job_id;
 
-    -- 7. Return results
-    RETURN QUERY SELECT v_job_id, v_new_credits;
-END;
-$$;
+    -- Return result
+    v_result := json_build_object(
+        'job_id', v_job_id,
+        'new_credits', v_new_credits
+    );
 
--- Function: Refund credit to user
-CREATE OR REPLACE FUNCTION refund_credit(
-    p_tg_user_id BIGINT,
-    p_amount INT DEFAULT 1
-)
-RETURNS VOID
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
+    RETURN v_result;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to refund credit when job fails
+CREATE OR REPLACE FUNCTION refund_credit(p_tg_user_id BIGINT)
+RETURNS VOID AS $$
 BEGIN
-    UPDATE public.users 
-    SET credits = credits + p_amount,
+    UPDATE users
+    SET credits = credits + 1,
         updated_at = NOW()
     WHERE tg_user_id = p_tg_user_id;
-    
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'User with tg_user_id % not found', p_tg_user_id;
-    END IF;
 END;
-$$;
+$$ LANGUAGE plpgsql;
+
+-- Function to get user balance
+CREATE OR REPLACE FUNCTION get_user_balance(p_tg_user_id BIGINT)
+RETURNS INT AS $$
+DECLARE
+    v_credits INT;
+BEGIN
+    SELECT credits INTO v_credits
+    FROM users
+    WHERE tg_user_id = p_tg_user_id;
+    
+    RETURN COALESCE(v_credits, 2);  -- Default 2 credits for new users
+END;
+$$ LANGUAGE plpgsql;
 
 -- ===================================
 -- TRIGGERS
 -- ===================================
 
--- Auto-update updated_at timestamp
+-- Trigger to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -164,26 +157,25 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER update_users_updated_at
-    BEFORE UPDATE ON public.users
+    BEFORE UPDATE ON users
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
 -- ===================================
--- PERMISSIONS (if using RLS)
+-- INDEXES FOR PERFORMANCE
 -- ===================================
 
--- Enable RLS
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
+-- Additional indexes for better query performance
+CREATE INDEX IF NOT EXISTS idx_jobs_kie_task_id ON public.jobs(kie_task_id) WHERE kie_task_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_jobs_status_started ON public.jobs(status, started_at) WHERE status = 'processing';
 
--- Service role has full access
-CREATE POLICY "Service role has full access to users" ON public.users
-    FOR ALL
-    USING (true)
-    WITH CHECK (true);
+-- ===================================
+-- PERMISSIONS (Optional, for security)
+-- ===================================
 
-CREATE POLICY "Service role has full access to jobs" ON public.jobs
-    FOR ALL
-    USING (true)
-    WITH CHECK (true);
-
+-- Grant permissions to bot user (if using dedicated user)
+-- GRANT SELECT, INSERT, UPDATE ON users TO botuser;
+-- GRANT SELECT, INSERT, UPDATE ON jobs TO botuser;
+-- GRANT EXECUTE ON FUNCTION create_job_and_consume_credit TO botuser;
+-- GRANT EXECUTE ON FUNCTION refund_credit TO botuser;
+-- GRANT EXECUTE ON FUNCTION get_user_balance TO botuser;

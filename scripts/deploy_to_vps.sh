@@ -134,7 +134,7 @@ echo ""
 echo -e "${YELLOW}📊 Шаг 4: Загрузка схемы базы данных${NC}"
 
 # Копируем schema.sql на сервер
-scp supabase/schema.sql ${SERVER_USER}@${SERVER_IP}:/tmp/schema.sql
+scp database/schema.sql ${SERVER_USER}@${SERVER_IP}:/tmp/schema.sql
 
 ssh ${SERVER_USER}@${SERVER_IP} << 'ENDSSH'
     set -e
