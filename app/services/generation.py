@@ -5,7 +5,8 @@ from app import texts
 from app.keyboards import kb_no_credits, kb_started
 from app.services.tg_files import download_photo_bytes
 from app.services.storage_factory import get_storage
-from app.db_adapter import get_job_by_idempotency_key, create_job_and_consume_credit, get_queue_position, safe_get_balance
+from app.services.redis_queue import enqueue_job, get_job_status
+from app.db_adapter import get_job_by_idempotency_key, create_job_and_consume_credit, safe_get_balance
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +61,19 @@ async def start_generation(
         )
         # чтобы вызывающий код не падал
         return None, None
-
-    # 4) (опционально) считаем позицию, но НЕ шлём отдельным сообщением
+5) Добавить задачу в Redis очередь
     try:
-        _ = await get_queue_position(job_id)
-    except Exception:
+        enqueue_job(
+            job_id=str(job_id),
+            tg_user_id=tg_user_id,
+            input_photo_path=input_path,
+            product_info=product_info,
+            template_id=template_id,
+            extra_wishes=extra_wishes,
+        )
+        logger.info(f"✅ Job {job_id} added to Redis queue")
+    except Exception as e:
+        logger.error(f"❌ Failed to enqueue job {job_id}: {e}", exc_info=True)xception:
         pass
 
     # НЕ отправляем уведомление здесь - worker отправит его сам

@@ -1,0 +1,134 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: neurocards-postgres
+    environment:
+      POSTGRES_DB: neurocards
+      POSTGRES_USER: ${POSTGRES_USER:-neurocards}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-neurocards}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - neurocards
+
+  # Redis Queue
+  redis:
+    image: redis:7-alpine
+    container_name: neurocards-redis
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - neurocards
+
+  # Telegram Bot (Webhook Handler)
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    container_name: neurocards-bot
+    environment:
+      # Telegram
+      BOT_TOKEN: ${BOT_TOKEN}
+      WEBHOOK_SECRET_TOKEN: ${WEBHOOK_SECRET_TOKEN}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      
+      # Database
+      DATABASE_TYPE: postgres
+      DATABASE_URL: postgresql://${POSTGRES_USER:-neurocards}:${POSTGRES_PASSWORD}@postgres:5432/neurocards
+      
+      # Redis
+      REDIS_URL: redis://redis:6379/0
+      
+      # Storage
+      STORAGE_TYPE: ${STORAGE_TYPE:-local}
+      STORAGE_BASE_PATH: ${STORAGE_BASE_PATH:-/app/storage}
+    volumes:
+      - storage_data:/app/storage
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - neurocards
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Worker (Background Job Processor) - можно масштабировать
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      # Telegram (для отправки результатов)
+      BOT_TOKEN: ${BOT_TOKEN}
+      
+      # Database
+      DATABASE_TYPE: postgres
+      DATABASE_URL: postgresql://${POSTGRES_USER:-neurocards}:${POSTGRES_PASSWORD}@postgres:5432/neurocards
+      
+      # Redis
+      REDIS_URL: redis://redis:6379/0
+      
+      # AI APIs (можно несколько ключей через запятую)
+      KIE_API_KEY: ${KIE_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      
+      # Storage
+      STORAGE_TYPE: ${STORAGE_TYPE:-local}
+      STORAGE_BASE_PATH: ${STORAGE_BASE_PATH:-/app/storage}
+      
+      # Worker config
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-5}
+    volumes:
+      - storage_data:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - neurocards
+    # Масштабирование: docker-compose up --scale worker=10
+    deploy:
+      replicas: ${WORKER_REPLICAS:-3}
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+networks:
+  neurocards:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  storage_data:

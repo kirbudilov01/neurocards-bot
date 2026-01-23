@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+# Установка системных зависимостей
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Рабочая директория
+WORKDIR /app
+
+# Копируем requirements и устанавливаем зависимости
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Копируем код приложения
+COPY app/ ./app/
+COPY worker/ ./worker/
+COPY database/ ./database/
+
+# Создаем непривилегированного пользователя
+RUN useradd -m -u 1000 worker && chown -R worker:worker /app
+USER worker
+
+# Запуск RQ воркера
+CMD ["rq", "worker", "neurocards", "--url", "$REDIS_URL", "--burst"]

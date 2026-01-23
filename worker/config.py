@@ -10,19 +10,23 @@ def req(name: str) -> str:
 BOT_TOKEN = req("BOT_TOKEN")
 
 # Database configuration
-DATABASE_TYPE = os.getenv("DATABASE_TYPE", "supabase").lower()  # supabase или postgres
-DATABASE_URL = os.getenv("DATABASE_URL", "")  # для прямого PostgreSQL
+DATABASE_TYPE = os.getenv("DATABASE_TYPE", "postgres").lower()
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-# Supabase (для обратной совместимости)
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-SUPABASE_BUCKET_INPUTS = os.getenv("SUPABASE_BUCKET_INPUTS", "inputs")
-SUPABASE_BUCKET_OUTPUTS = os.getenv("SUPABASE_BUCKET_OUTPUTS", "outputs")
+# Redis Queue
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+QUEUES = ["neurocards"]
 
-# OpenAI (для реальной генерации нейрокарточки сразу)
+# Worker settings
+MAX_RETRY_ATTEMPTS = int(os.getenv("MAX_RETRY_ATTEMPTS", "3"))
+WORKER_CONCURRENCY = int(os.getenv("WORKER_CONCURRENCY", "5"))
+
+# Storage
+STORAGE_TYPE = os.getenv("STORAGE_TYPE", "local")
+STORAGE_BASE_PATH = os.getenv("STORAGE_BASE_PATH", "/app/storage")
+
+# OpenAI
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1")
 
-# Kie AI (ключ уже добавил — ок; endpoint может добавишь позже)
+# KIE AI (можно несколько ключей через запятую)
 KIE_API_KEY = os.getenv("KIE_API_KEY", "")
-KIE_GENERATE_URL = os.getenv("KIE_GENERATE_URL", "")  # например: https://.../generate
