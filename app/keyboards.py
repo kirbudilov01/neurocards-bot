@@ -54,6 +54,15 @@ def kb_back_to_menu():
     ])
 
 
+# ========== PHOTO REQUEST ==========
+def kb_photo_request():
+    """Клавиатура при запросе фото товара"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔗 Ссылка на товар (WB/OZON/YM)", callback_data="product_link")],
+        [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")]
+    ])
+
+
 # ========== TOP UP ==========
 def kb_topup():
     return InlineKeyboardMarkup(inline_keyboard=[

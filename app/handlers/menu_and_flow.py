@@ -26,7 +26,33 @@ MENU_PHOTO_PATH = "assets/menu.jpg"
 MENU_TEXT = getattr(texts, "MENU", "Выберите действие 👇")
 
 
-async def show_menu(message, text, reply_markup):
+async def show_menu(message, text, reply_markup, edit=True):
+    """Показать меню. Если edit=True, редактирует текущее сообщение, иначе создаёт новое"""
+    if edit and message.photo:
+        # Если есть фото в сообщении - редактируем caption
+        try:
+            await message.edit_caption(
+                caption=text,
+                reply_markup=reply_markup,
+                parse_mode=PARSE_MODE,
+            )
+            return
+        except Exception:
+            pass  # Если не получилось отредактировать, создадим новое
+    
+    if edit:
+        # Пытаемся отредактировать текст (если это текстовое сообщение)
+        try:
+            await message.edit_text(
+                text=text,
+                reply_markup=reply_markup,
+                parse_mode=PARSE_MODE,
+            )
+            return
+        except Exception:
+            pass  # Если не получилось, создадим новое
+    
+    # Создаём новое сообщение с фото
     try:
         await message.answer_photo(
             FSInputFile(MENU_PHOTO_PATH),
@@ -51,6 +77,30 @@ async def back_to_menu(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
     await state.clear()
     await show_menu(cb.message, MENU_TEXT, kb_menu())
+
+
+@router.callback_query(F.data == "product_link")
+async def product_link_handler(cb: CallbackQuery):
+    """Обработчик кнопки 'Ссылка на товар'"""
+    await cb.answer()
+    try:
+        await cb.message.edit_text(
+            "🔧 <b>Функция в разработке</b>\n\n"
+            "⏳ Скоро ты сможешь просто отправить ссылку на товар с маркетплейса, "
+            "и я сама скачаю все фото!\n\n"
+            "А пока — пришли фото вручную 📸",
+            parse_mode=PARSE_MODE,
+            reply_markup=kb_back_to_menu(),
+        )
+    except Exception:
+        await cb.message.answer(
+            "🔧 <b>Функция в разработке</b>\n\n"
+            "⏳ Скоро ты сможешь просто отправить ссылку на товар с маркетплейса, "
+            "и я сама скачаю все фото!\n\n"
+            "А пока — пришли фото вручную 📸",
+            parse_mode=PARSE_MODE,
+            reply_markup=kb_back_to_menu(),
+        )
 
 
 @router.callback_query(F.data.startswith("again:"))
@@ -134,11 +184,18 @@ async def cabinet(cb: CallbackQuery):
             "CABINET",
             "👤 <b>Личный кабинет</b>\n\n💳 Баланс: <b>{credits}</b>\n\nВыбери действие:",
         )
-        await cb.message.answer(
-            cabinet_tpl.format(credits=bal),
-            reply_markup=kb_cabinet(),
-            parse_mode=PARSE_MODE,
-        )
+        try:
+            await cb.message.edit_text(
+                cabinet_tpl.format(credits=bal),
+                reply_markup=kb_cabinet(),
+                parse_mode=PARSE_MODE,
+            )
+        except Exception:
+            await cb.message.answer(
+                cabinet_tpl.format(credits=bal),
+                reply_markup=kb_cabinet(),
+                parse_mode=PARSE_MODE,
+            )
     except Exception as e:
         logging.error(f"Error in cabinet: {e}", exc_info=True)
         await cb.message.answer(
@@ -151,32 +208,53 @@ async def cabinet(cb: CallbackQuery):
 @router.callback_query(F.data == "topup")
 async def topup(cb: CallbackQuery):
     await cb.answer()
-    await cb.message.answer(
-        getattr(texts, "TOPUP_TEXT", "Пополнение баланса"),
-        reply_markup=kb_topup(),
-        parse_mode=PARSE_MODE,
-    )
+    try:
+        await cb.message.edit_text(
+            getattr(texts, "TOPUP_TEXT", "Пополнение баланса"),
+            reply_markup=kb_topup(),
+            parse_mode=PARSE_MODE,
+        )
+    except Exception:
+        await cb.message.answer(
+            getattr(texts, "TOPUP_TEXT", "Пополнение баланса"),
+            reply_markup=kb_topup(),
+            parse_mode=PARSE_MODE,
+        )
 
 
 @router.callback_query(F.data.startswith("pay:"))
 async def pay_stub(cb: CallbackQuery):
     await cb.answer()
-    await cb.message.answer(
-        getattr(texts, "PAY_STUB", "Оплата в разработке."),
-        reply_markup=kb_cabinet(),
-        parse_mode=PARSE_MODE,
-    )
+    try:
+        await cb.message.edit_text(
+            getattr(texts, "PAY_STUB", "Оплата в разработке."),
+            reply_markup=kb_cabinet(),
+            parse_mode=PARSE_MODE,
+        )
+    except Exception:
+        await cb.message.answer(
+            getattr(texts, "PAY_STUB", "Оплата в разработке."),
+            reply_markup=kb_cabinet(),
+            parse_mode=PARSE_MODE,
+        )
 
 
 @router.callback_query(F.data == "support")
 async def support(cb: CallbackQuery):
     await cb.answer()
     txt = getattr(texts, "SUPPORT_TEXT", "🆘 Служба поддержки: {url}")
-    await cb.message.answer(
-        txt.format(url="https://t.me/your_support"),
-        reply_markup=kb_menu(),
-        parse_mode=PARSE_MODE,
-    )
+    try:
+        await cb.message.edit_text(
+            txt.format(url="https://t.me/your_support"),
+            reply_markup=kb_menu(),
+            parse_mode=PARSE_MODE,
+        )
+    except Exception:
+        await cb.message.answer(
+            txt.format(url="https://t.me/your_support"),
+            reply_markup=kb_menu(),
+            parse_mode=PARSE_MODE,
+        )
 
 
 @router.callback_query(F.data == "make_reels")
@@ -198,7 +276,7 @@ async def make_reels(cb: CallbackQuery, state: FSMContext):
 
     await cb.message.answer(
         full_text,
-        reply_markup=kb_back_to_menu(),
+        reply_markup=kb_photo_request(),
         parse_mode=PARSE_MODE,
     )
 

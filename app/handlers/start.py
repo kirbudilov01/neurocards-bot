@@ -22,15 +22,5 @@ async def start_handler(message: Message):
     except Exception:
         pass
 
-    # Показать приветственное сообщение с информацией о токенах
-    if is_new_user:
-        welcome_text = (
-            "🎉 <b>Welcome to NeuroCards!</b>\n\n"
-            "📺 I'll generate viral video from your products.\n\n"
-            "🎁 <b>You have 2 FREE videos to try!</b>\n"
-            "After that, it's paid. But the quality is insane 😎\n\n"
-            "Let's create something awesome!"
-        )
-        await message.answer(welcome_text, parse_mode="HTML", reply_markup=kb_continue())
-    else:
-        await message.answer(texts.WELCOME, reply_markup=kb_continue(), parse_mode="HTML")
+    # Показать приветственное сообщение
+    await message.answer(texts.WELCOME, reply_markup=kb_continue(), parse_mode="HTML")

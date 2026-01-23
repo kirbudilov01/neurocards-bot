@@ -1,7 +1,6 @@
 version: '3.8'
 
 services:
-<<<<<<< HEAD
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
@@ -12,7 +11,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+      - ./supabase/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-neurocards}"]
       interval: 10s
@@ -21,6 +20,8 @@ services:
     restart: unless-stopped
     networks:
       - neurocards
+    ports:
+      - "5432:5432"
 
   # Redis Queue
   redis:
@@ -37,18 +38,18 @@ services:
     restart: unless-stopped
     networks:
       - neurocards
+    ports:
+      - "6379:6379"
 
-  # Telegram Bot (Webhook Handler)
-  bot:
+  # Telegram Bot (Polling)
+  neurocards-polling:
     build:
       context: .
       dockerfile: Dockerfile.bot
-    container_name: neurocards-bot
+    container_name: neurocards-polling
     environment:
       # Telegram
       BOT_TOKEN: ${BOT_TOKEN}
-      WEBHOOK_SECRET_TOKEN: ${WEBHOOK_SECRET_TOKEN}
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
       
       # Database
       DATABASE_TYPE: postgres
@@ -62,8 +63,6 @@ services:
       STORAGE_BASE_PATH: ${STORAGE_BASE_PATH:-/app/storage}
     volumes:
       - storage_data:/app/storage
-    ports:
-      - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,36 +73,18 @@ services:
       - neurocards
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/healthz || exit 1"]
-=======
-  # Телеграм бот (веб-сервис, webhook)
-  bot:
-    build: .
-    container_name: neurocards-bot
-    command: python -m app.main
-    environment:
-      - BOT_TOKEN=${BOT_TOKEN}
-      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
-      - DATABASE_URL=${DATABASE_URL}
-      - WEBHOOK_SECRET_TOKEN=${WEBHOOK_SECRET_TOKEN:-random_secret_token}
-    ports:
-      - "10000:10000"
-    network_mode: host
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:10000/healthz"]
->>>>>>> 8f6520fa9541fa7c865a7c36d6faea7967bcf8fc
       interval: 30s
       timeout: 10s
       retries: 3
 
-<<<<<<< HEAD
-  # Worker (Background Job Processor) - можно масштабировать
-  worker:
+  # Workers (Background Job Processors)
+  neurocards-worker-1:
     build:
       context: .
       dockerfile: Dockerfile.worker
+    container_name: neurocards-worker-1
     environment:
-      # Telegram (для отправки результатов)
+      # Telegram
       BOT_TOKEN: ${BOT_TOKEN}
       
       # Database
@@ -113,16 +94,13 @@ services:
       # Redis
       REDIS_URL: redis://redis:6379/0
       
-      # AI APIs (можно несколько ключей через запятую)
+      # AI APIs
       KIE_API_KEY: ${KIE_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       
       # Storage
       STORAGE_TYPE: ${STORAGE_TYPE:-local}
       STORAGE_BASE_PATH: ${STORAGE_BASE_PATH:-/app/storage}
-      
-      # Worker config
-      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-5}
     volumes:
       - storage_data:/app/storage
     depends_on:
@@ -133,16 +111,84 @@ services:
     restart: unless-stopped
     networks:
       - neurocards
-    # Масштабирование: docker-compose up --scale worker=10
-    deploy:
-      replicas: ${WORKER_REPLICAS:-3}
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
+
+  neurocards-worker-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: neurocards-worker-2
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN}
+      DATABASE_TYPE: postgres
+      DATABASE_URL: postgresql://${POSTGRES_USER:-neurocards}:${POSTGRES_PASSWORD}@postgres:5432/neurocards
+      REDIS_URL: redis://redis:6379/0
+      KIE_API_KEY: ${KIE_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      STORAGE_TYPE: ${STORAGE_TYPE:-local}
+      STORAGE_BASE_PATH: ${STORAGE_BASE_PATH:-/app/storage}
+    volumes:
+      - storage_data:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - neurocards
+
+  neurocards-worker-3:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: neurocards-worker-3
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN}
+      DATABASE_TYPE: postgres
+      DATABASE_URL: postgresql://${POSTGRES_USER:-neurocards}:${POSTGRES_PASSWORD}@postgres:5432/neurocards
+      REDIS_URL: redis://redis:6379/0
+      KIE_API_KEY: ${KIE_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      STORAGE_TYPE: ${STORAGE_TYPE:-local}
+      STORAGE_BASE_PATH: ${STORAGE_BASE_PATH:-/app/storage}
+    volumes:
+      - storage_data:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - neurocards
+
+  # ✅ METABASE - Analytics & Admin Panel
+  metabase:
+    image: metabase/metabase:latest
+    container_name: neurocards-metabase
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: metabase
+      MB_DB_PORT: 5432
+      MB_DB_USER: ${POSTGRES_USER:-neurocards}
+      MB_DB_PASS: ${POSTGRES_PASSWORD}
+      MB_DB_HOST: postgres
+      MB_JAVA_TOOL_OPTIONS: -Xmx1024m
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - neurocards
+    volumes:
+      - metabase_data:/metabase-data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
 networks:
   neurocards:
@@ -152,22 +198,4 @@ volumes:
   postgres_data:
   redis_data:
   storage_data:
-=======
-  # Background Worker (масштабируемый)
-  worker:
-    build: .
-    command: python -m worker.worker
-    environment:
-      - BOT_TOKEN=${BOT_TOKEN}
-      - KIE_API_KEY=${KIE_API_KEY}
-      - KIE_BASE_URL=${KIE_BASE_URL:-https://api.kie.ai}
-      - KIE_CREATE_TASK_URL=${KIE_CREATE_TASK_URL:-https://api.kie.ai/api/v1/jobs/createTask}
-      - KIE_RECORD_INFO_URL=${KIE_RECORD_INFO_URL:-https://api.kie.ai/api/v1/jobs/recordInfo}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com}
-      - DATABASE_URL=${DATABASE_URL}
-    network_mode: host
-    restart: unless-stopped
-    deploy:
-      replicas: 5  # 🔥 5 воркеров для параллельной обработки
->>>>>>> 8f6520fa9541fa7c865a7c36d6faea7967bcf8fc
+  metabase_data:

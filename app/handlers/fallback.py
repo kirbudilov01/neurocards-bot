@@ -30,7 +30,10 @@ async def start_handler(message: Message):
 @router.callback_query()
 async def unknown_callback(cb: CallbackQuery):
     await cb.answer("Вернул в меню")
-    await cb.message.answer(texts.MENU, reply_markup=kb_menu(), parse_mode="HTML")
+    try:
+        await cb.message.edit_text(texts.MENU, reply_markup=kb_menu(), parse_mode="HTML")
+    except Exception:
+        await cb.message.answer(texts.MENU, reply_markup=kb_menu(), parse_mode="HTML")
 
 
 # ✅ всё остальное — показываем меню (и фото тоже, если вдруг не поймалось state-хендлерами)
