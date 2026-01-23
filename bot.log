@@ -1,5 +1,0 @@
-nohup: ignoring input
-Traceback (most recent call last):
-  File "/workspaces/neurocards-bot.worktrees/copilot-worktree-2026-01-22T18-12-59/app/main.py", line 21, in <module>
-    from app.config import BOT_TOKEN, PUBLIC_BASE_URL
-ModuleNotFoundError: No module named 'app'

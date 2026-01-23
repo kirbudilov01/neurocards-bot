@@ -1,9 +1,0 @@
-nohup: ignoring input
-2026-01-22 23:00:10,645 - __main__ - ERROR - ❌ Missing env var: BOT_TOKEN
-Traceback (most recent call last):
-  File "/workspaces/neurocards-bot.worktrees/copilot-worktree-2026-01-22T18-12-59/worker/worker.py", line 60, in <module>
-    BOT_TOKEN = req("BOT_TOKEN")
-                ^^^^^^^^^^^^^^^^
-  File "/workspaces/neurocards-bot.worktrees/copilot-worktree-2026-01-22T18-12-59/worker/worker.py", line 55, in req
-    raise RuntimeError(f"Missing env var: {name}")
-RuntimeError: Missing env var: BOT_TOKEN
