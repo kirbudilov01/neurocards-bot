@@ -1,0 +1,70 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+deploy.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Documentation (не нужны в образе)
+*.md
+!README.md
+
+# Tests
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# VPS scripts (не нужны в Docker)
+scripts/deploy_to_vps.sh
+scripts/update_vps.sh
+scripts/monitor_vps.sh
+scripts/backup_vps.sh
+systemd/
+
+# Temporary
+*.tmp
+.cache/

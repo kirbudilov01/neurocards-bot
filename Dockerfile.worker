@@ -16,10 +16,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 COPY worker/ ./worker/
 COPY database/ ./database/
+COPY docker-entrypoint-worker.sh /app/
 
 # Создаем непривилегированного пользователя
-RUN useradd -m -u 1000 worker && chown -R worker:worker /app
+RUN useradd -m -u 1000 worker && chown -R worker:worker /app && chmod +x /app/docker-entrypoint-worker.sh
 USER worker
 
-# Запуск RQ воркера
-CMD ["rq", "worker", "neurocards", "--url", "$REDIS_URL", "--burst"]
+# Запуск RQ воркера через entrypoint
+ENTRYPOINT ["/app/docker-entrypoint-worker.sh"]

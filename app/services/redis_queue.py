@@ -53,7 +53,7 @@ def enqueue_job(
     
     # Добавляем в очередь с ID для идемпотентности
     job = queue.enqueue(
-        "worker.worker.process_video_job",
+        "worker.rq_worker.process_video_job",  # Полный путь к функции
         job_data,
         job_id=job_id,  # Используем наш UUID как ID в Redis
         timeout="30m",  # Таймаут 30 минут на обработку
