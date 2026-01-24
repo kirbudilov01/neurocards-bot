@@ -20,9 +20,10 @@ async def run_blocking(func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
 
 
 # Определяем тип базы данных
-DATABASE_TYPE = os.getenv("DATABASE_TYPE", "supabase").lower()  # supabase или postgres
+USE_POSTGRES = os.getenv("USE_POSTGRES", "false").lower() == "true"
+DATABASE_TYPE = os.getenv("DATABASE_TYPE", "supabase").lower()
 
-if DATABASE_TYPE == "postgres":
+if USE_POSTGRES or DATABASE_TYPE == "postgres":
     # Используем прямое подключение к PostgreSQL через asyncpg
     import asyncpg
     from asyncpg import Pool
