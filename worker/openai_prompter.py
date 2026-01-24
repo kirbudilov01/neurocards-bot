@@ -97,13 +97,29 @@ def build_prompt_with_gpt(system: str, instructions: str, product_text: str, ext
                 client_kwargs["proxies"] = proxy_dict
             
             with httpx.Client(**client_kwargs) as client:
-                r = client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers=headers,
-                    json=payload,
-                )
-                r.raise_for_status()
-                data = r.json()
+                try:
+                    r = client.post(
+                        "https://api.openai.com/v1/chat/completions",
+                        headers=headers,
+                        json=payload,
+                    )
+                    r.raise_for_status()
+                    data = r.json()
+                except httpx.HTTPStatusError as e:
+                    # Ловим HTTP ошибки от OpenAI (включая 400 с деталями)
+                    info = {
+                        "source": "openai",
+                        "status_code": e.response.status_code if e.response else None,
+                        "error": str(e),
+                    }
+                    if e.response is not None:
+                        try:
+                            info["data"] = e.response.json()
+                        except Exception:
+                            info["body"] = e.response.text
+                    err = RuntimeError(f"OpenAI HTTP error {info.get('status_code')}")
+                    err.openai_info = info
+                    raise err
                 
                 # Безопасная распаковка
                 if not data.get("choices"):

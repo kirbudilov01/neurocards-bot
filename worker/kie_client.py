@@ -35,9 +35,24 @@ def create_task_sora_i2v(prompt: str, image_url: str) -> tuple[str, str]:
     }
 
     with httpx.Client(timeout=90.0) as c:
-        r = c.post(KIE_CREATE_TASK_URL, headers=_auth_headers_json(api_key), json=payload)
-        r.raise_for_status()
-        data = r.json()
+        try:
+            r = c.post(KIE_CREATE_TASK_URL, headers=_auth_headers_json(api_key), json=payload)
+            r.raise_for_status()
+            data = r.json()
+        except httpx.HTTPStatusError as e:
+            # Пробуем достать тело ответа, чтобы корректно классифицировать ошибку
+            info = {
+                "status_code": e.response.status_code if e.response else None,
+                "error": str(e),
+            }
+            if e.response is not None:
+                try:
+                    info["data"] = e.response.json()
+                except Exception:
+                    info["body"] = e.response.text
+            err = RuntimeError(f"KIE HTTP error {info.get('status_code')}")
+            err.kie_info = info
+            raise err
 
     import logging
     logger = logging.getLogger(__name__)
@@ -70,9 +85,24 @@ def poll_record_info(task_id: str, api_key: str, timeout_sec: int = 300, interva
         last = None
         while time.time() < deadline:
             url = f"{KIE_RECORD_INFO_URL}?taskId={task_id}"
-            r = c.get(url, headers={"Authorization": f"Bearer {api_key}"})
-            r.raise_for_status()
-            last = r.json()
+            try:
+                r = c.get(url, headers={"Authorization": f"Bearer {api_key}"})
+                r.raise_for_status()
+                last = r.json()
+            except httpx.HTTPStatusError as e:
+                info = {
+                    "status_code": e.response.status_code if e.response else None,
+                    "error": str(e),
+                    "taskId": task_id,
+                }
+                if e.response is not None:
+                    try:
+                        info["data"] = e.response.json()
+                    except Exception:
+                        info["body"] = e.response.text
+                err = RuntimeError(f"KIE HTTP error {info.get('status_code')}")
+                err.kie_info = info
+                raise err
 
             # статус может лежать в разных местах — проверим популярные
             data = last.get("data") if isinstance(last, dict) else None

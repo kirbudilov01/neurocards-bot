@@ -8,8 +8,8 @@ from typing import Optional, Dict, Any
 
 
 class KieErrorType(Enum):
-    """Типы ошибок от KIE API"""
-    USER_VIOLATION = "user_violation"  # Нарушение правил (плохое фото/промпт)
+    """Типы ошибок от KIE API и сервисов генерации"""
+    USER_VIOLATION = "user_violation"  # Нарушение правил (плохое фото/промпт, photorealistic people)
     BILLING = "billing"  # Проблемы с биллингом/аккаунтом
     RATE_LIMIT = "rate_limit"  # Превышен rate limit
     TEMPORARY = "temporary"  # Временная ошибка (503, timeout)
@@ -21,14 +21,22 @@ def classify_kie_error(info: Dict[str, Any]) -> tuple[KieErrorType, str]:
     Классифицирует ответ от KIE API на тип ошибки
     
     Args:
-        info: Ответ от poll_record_info
+        info: Ответ от poll_record_info или вложенный HTTP error payload
         
     Returns:
         (error_type, error_message)
     """
+    status_code = None
+    if isinstance(info, dict):
+        status_code = info.get("status_code")
+        if isinstance(status_code, str) and status_code.isdigit():
+            status_code = int(status_code)
+
     # Извлекаем сообщение об ошибке
     error_msg = _extract_error_message(info)
     if not error_msg:
+        if status_code is not None:
+            return (KieErrorType.UNKNOWN, f"HTTP {status_code}")
         return (KieErrorType.UNKNOWN, "No error message found")
     
     error_lower = error_msg.lower()
@@ -38,9 +46,14 @@ def classify_kie_error(info: Dict[str, Any]) -> tuple[KieErrorType, str]:
         "policy", "content", "inappropriate", "violation", "rule", "guideline",
         "safety", "prohibited", "restricted", "denied", "rejected", "banned",
         "nsfw", "explicit", "harmful", "offensive", "abuse", "illegal",
-        "copyright", "trademark", "privacy", "terms of service", "tos"
+        "copyright", "trademark", "privacy", "terms of service", "tos",
+        "sora 2", "sora2", "photorealistic people", "photorealistic", "realistic people", "human", "people",
+        "suggestive", "racy", "sexual", "nude", "adult", "mature", "violent", "weapon", "gore"
     ]
     if any(keyword in error_lower for keyword in policy_keywords):
+        return (KieErrorType.USER_VIOLATION, error_msg)
+    if status_code == 400:
+        # KIE возвращает 400 при нарушении правил Sora 2 — считаем это user violation
         return (KieErrorType.USER_VIOLATION, error_msg)
     
     # 2. Billing/Account Issues (BILLING)
@@ -81,7 +94,7 @@ def _extract_error_message(info: Dict[str, Any]) -> Optional[str]:
     # Проверяем разные возможные поля с ошибкой
     error_fields = [
         "error", "error_message", "errorMessage", "message", "msg",
-        "failMsg", "fail_msg", "reason", "detail", "details"
+        "failMsg", "fail_msg", "reason", "detail", "details", "body"
     ]
     
     # Ищем в корне
@@ -153,10 +166,14 @@ def get_user_error_message(error_type: KieErrorType) -> str:
     """Возвращает сообщение для пользователя в зависимости от типа ошибки"""
     if error_type == KieErrorType.USER_VIOLATION:
         return (
-            "⚠️ <b>Вы нарушили правила SORA 2</b>\n\n"
-            "Внимательно изучите требования к:\n"
-            "• фото (чаще всего проблема в фото)\n"
-            "• промпту\n\n"
+            "⚠️ <b>Контент не прошёл проверку Sora 2</b>\n\n"
+            "Возможные причины:\n"
+            "🚫 <b>На фото есть люди</b> — Sora 2 не поддерживает реалистичных людей;\n"
+            "🚫 Содержание: запрещённый, взрослый или провокационный контент;\n"
+            "🚫 Оружие, насилие или другое нарушение политики.\n\n"
+            "💡 Попробуйте:\n"
+            "• Заменить фото (без людей, товара, модели и т.п.);\n"
+            "• Упростить/изменить текст промпта.\n\n"
             "💰 1 кредит вернули на баланс ✅"
         )
     

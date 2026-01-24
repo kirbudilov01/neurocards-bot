@@ -384,9 +384,31 @@ async def main():
                 
                 try:
                     if 'tg_user_id' in locals() and 'job' in locals():
+                        error_type = KieErrorType.UNKNOWN
+                        error_msg = str(e)
+                        
+                        # Проверяем OpenAI ошибки
+                        if hasattr(e, "openai_info"):
+                            try:
+                                error_type, error_msg = classify_kie_error(e.openai_info)
+                                logger.info(f"🔍 OpenAI error classified: {error_type} - {error_msg}")
+                            except Exception as classify_error:
+                                logger.error(f"⚠️ Failed to classify OpenAI error: {classify_error}")
+                        # Проверяем KIE ошибки
+                        elif hasattr(e, "kie_info"):
+                            try:
+                                error_type, error_msg = classify_kie_error(e.kie_info)
+                                logger.info(f"🔍 KIE error classified in outer handler: {error_type} - {error_msg}")
+                            except Exception as classify_error:
+                                logger.error(f"⚠️ Failed to classify KIE error in outer handler: {classify_error}")
+                        
+                        user_msg = get_user_error_message(error_type)
+                        if error_type == KieErrorType.UNKNOWN:
+                            user_msg = f"❌ Произошла ошибка генерации. 1 кредит вернулся на баланс ✅\n{error_msg}"
+
                         await bot.send_message(
                             tg_user_id,
-                            f"❌ Произошла ошибка генерации. 1 кредит вернулся на баланс ✅\n{e}",
+                            user_msg,
                             reply_markup=kb_result(job.get("kind") or "reels"),
                         )
                 except Exception as notify_error:

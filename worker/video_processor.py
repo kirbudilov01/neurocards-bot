@@ -108,7 +108,10 @@ def build_prompt(product_info: dict, template_id: str, extra_wishes: str | None)
         return prompt
     except Exception as e:
         logger.error(f"❌ GPT prompt generation failed: {e}, using fallback")
-        # Fallback к базовому промпту
+        # Если это OpenAI ошибка с деталями (photorealistic people и т.п.) - пробросим дальше
+        if hasattr(e, 'openai_info'):
+            raise e
+        # Иначе используем fallback промпт
         fallback_prompt = f"A commercial video showing: {product_text}"
         logger.info(f"⚡ Using fallback prompt: {fallback_prompt[:150]}...")
         return fallback_prompt
