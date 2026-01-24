@@ -29,7 +29,7 @@ def create_task_sora_i2v(prompt: str, image_url: str) -> tuple[str, str]:
             "prompt": f"{prompt}. Important: preserve the exact appearance of the product from the photo - color, shape, size, all details must match.",
             "image_urls": [image_url],
             "n_frames": "15",
-            "aspect_ratio": "9:16",  # Вертикальный формат для Reels/TikTok
+            "aspect_ratio": "portrait",  # Вертикальный формат (9:16) для Reels/TikTok
             "remove_watermark": True,
         },
     }
@@ -38,6 +38,10 @@ def create_task_sora_i2v(prompt: str, image_url: str) -> tuple[str, str]:
         r = c.post(KIE_CREATE_TASK_URL, headers=_auth_headers_json(api_key), json=payload)
         r.raise_for_status()
         data = r.json()
+
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"📋 KIE API response: {data}")
 
     # data может быть {"code": 200, "data": {...}} или {"recordId": ...}
     data_obj = data.get("data") if data.get("data") is not None else data

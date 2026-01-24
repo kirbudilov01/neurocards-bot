@@ -26,7 +26,6 @@ class KieKeyRotator:
         """Загружает API ключи из переменных окружения"""
         keys = []
         
-<<<<<<< HEAD
         # Поддержка одного или нескольких ключей через запятую
         keys_str = os.getenv("KIE_API_KEY", "").strip()
         if keys_str:
@@ -34,20 +33,11 @@ class KieKeyRotator:
             keys = [k.strip() for k in keys_str.split(",") if k.strip()]
         
         # Поддержка пула ключей (KIE_API_KEY_1, KIE_API_KEY_2, ...) - для обратной совместимости
-=======
-        # Поддержка одного ключа (обратная совместимость)
-        single_key = os.getenv("KIE_API_KEY", "").strip()
-        if single_key:
-            keys.append(single_key)
-        
-        # Поддержка пула ключей (KIE_API_KEY_1, KIE_API_KEY_2, ...)
->>>>>>> 8f6520fa9541fa7c865a7c36d6faea7967bcf8fc
         i = 1
         while True:
             key = os.getenv(f"KIE_API_KEY_{i}", "").strip()
             if not key:
                 break
-<<<<<<< HEAD
             if key not in keys:  # Избегаем дублей
                 keys.append(key)
             i += 1
@@ -56,14 +46,6 @@ class KieKeyRotator:
             raise RuntimeError("No KIE API keys found. Set KIE_API_KEY (comma-separated) or KIE_API_KEY_1, KIE_API_KEY_2, ...")
         
         logger.info(f"📋 Loaded {len(keys)} KIE API key(s)")
-=======
-            keys.append(key)
-            i += 1
-        
-        if not keys:
-            raise RuntimeError("No KIE API keys found. Set KIE_API_KEY or KIE_API_KEY_1, KIE_API_KEY_2, ...")
-        
->>>>>>> 8f6520fa9541fa7c865a7c36d6faea7967bcf8fc
         return keys
     
     def get_key(self) -> str:
@@ -87,7 +69,6 @@ class KieKeyRotator:
             logger.warning("⚠️ All KIE API keys are blocked, using first one anyway")
             return self._keys[0]
     
-<<<<<<< HEAD
     def mark_failed(self, key: Optional[str]):
         """Универсальный метод для пометки неудачного использования ключа"""
         if not key:
@@ -104,8 +85,6 @@ class KieKeyRotator:
             
             logger.warning(f"⚠️ KIE API key marked as failed, blocked for 1 minute")
     
-=======
->>>>>>> 8f6520fa9541fa7c865a7c36d6faea7967bcf8fc
     def report_success(self, key: str):
         """Отмечает успешное использование ключа"""
         with self._lock:

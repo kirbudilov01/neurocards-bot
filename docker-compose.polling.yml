@@ -22,7 +22,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: neurocards-redis
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --tcp-keepalive 60 --timeout 300
     volumes:
       - redis_data:/data
     networks:
@@ -50,6 +50,7 @@ services:
       - neurocards
     restart: unless-stopped
     volumes:
+      - ./assets:/app/assets:ro
       - storage_data:/app/storage:rw
 
   worker:
@@ -83,6 +84,34 @@ services:
       - neurocards
     restart: unless-stopped
 
+  # ✅ METABASE - Analytics & Admin Panel
+  metabase:
+    image: metabase/metabase:latest
+    container_name: neurocards-metabase
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: metabase
+      MB_DB_PORT: 5432
+      MB_DB_USER: ${POSTGRES_USER:-neurocards}
+      MB_DB_PASS: ${POSTGRES_PASSWORD:-neurocards_secure_2026}
+      MB_DB_HOST: postgres
+      MB_JAVA_TOOL_OPTIONS: -Xmx1024m
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - neurocards
+    volumes:
+      - metabase_data:/metabase-data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
 networks:
   neurocards:
     driver: bridge
@@ -91,3 +120,4 @@ volumes:
   postgres_data:
   redis_data:
   storage_data:
+  metabase_data:

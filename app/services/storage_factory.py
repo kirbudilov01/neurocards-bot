@@ -7,11 +7,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 STORAGE_TYPE = os.getenv("STORAGE_TYPE", "local").lower()
-<<<<<<< HEAD
 LOCAL_STORAGE_BASE_PATH = os.getenv("STORAGE_BASE_PATH", "/app/storage")
-=======
-LOCAL_STORAGE_BASE_PATH = os.getenv("LOCAL_STORAGE_BASE_PATH", "/var/neurocards/storage")
->>>>>>> 8f6520fa9541fa7c865a7c36d6faea7967bcf8fc
 
 
 def get_storage():

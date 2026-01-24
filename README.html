@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎬 NeuroCards Bot - Документация</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 60px 40px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 3.5em;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .header p {
+            font-size: 1.3em;
+            opacity: 0.95;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .toc {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 40px;
+        }
+
+        .toc h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+
+        .toc ul {
+            list-style: none;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 10px;
+        }
+
+        .toc li a {
+            color: #333;
+            text-decoration: none;
+            padding: 10px 15px;
+            display: block;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+
+        .toc li a:hover {
+            background: #667eea;
+            color: white;
+            transform: translateX(5px);
+        }
+
+        section {
+            margin-bottom: 60px;
+            scroll-margin-top: 20px;
+        }
+
+        h2 {
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 3px solid #667eea;
+        }
+
+        h3 {
+            color: #764ba2;
+            font-size: 1.8em;
+            margin: 30px 0 20px 0;
+        }
+
+        h4 {
+            color: #555;
+            font-size: 1.3em;
+            margin: 20px 0 15px 0;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+
+        .feature-card {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 15px;
+            padding: 25px;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        }
+
+        .feature-card h4 {
+            color: #667eea;
+            margin-top: 0;
+        }
+
+        .architecture-diagram {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 30px;
+            margin: 30px 0;
+            overflow-x: auto;
+        }
+
+        .architecture-diagram pre {
+            margin: 0;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.85em;
+            line-height: 1.4;
+        }
+
+        .value-section {
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+            border-radius: 15px;
+            padding: 30px;
+            margin: 30px 0;
+        }
+
+        .value-section h3 {
+            color: #d84315;
+        }
+
+        .value-section ol {
+            margin-left: 20px;
+            margin-top: 15px;
+        }
+
+        .value-section li {
+            margin: 10px 0;
+            font-size: 1.1em;
+        }
+
+        code {
+            background: #f4f4f4;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.9em;
+            color: #d84315;
+        }
+
+        pre {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 10px;
+            overflow-x: auto;
+            margin: 20px 0;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.9em;
+            line-height: 1.5;
+        }
+
+        pre code {
+            background: none;
+            color: #d4d4d4;
+            padding: 0;
+        }
+
+        .tech-stack {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin: 30px 0;
+        }
+
+        .tech-category {
+            background: linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%);
+            border-radius: 15px;
+            padding: 25px;
+        }
+
+        .tech-category h4 {
+            color: #4a148c;
+            margin-top: 0;
+        }
+
+        .tech-category ul {
+            list-style: none;
+            margin-top: 15px;
+        }
+
+        .tech-category li {
+            padding: 8px 0;
+            padding-left: 25px;
+            position: relative;
+        }
+
+        .tech-category li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #4a148c;
+            font-weight: bold;
+        }
+
+        .quick-start {
+            background: #e8f5e9;
+            border-left: 5px solid #4caf50;
+            padding: 25px;
+            margin: 30px 0;
+            border-radius: 0 10px 10px 0;
+        }
+
+        .warning {
+            background: #fff3e0;
+            border-left: 5px solid #ff9800;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 0 10px 10px 0;
+        }
+
+        .info {
+            background: #e3f2fd;
+            border-left: 5px solid #2196f3;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 0 10px 10px 0;
+        }
+
+        .footer {
+            background: #2c3e50;
+            color: white;
+            padding: 40px;
+            text-align: center;
+            margin-top: 60px;
+        }
+
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        .badge {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            margin: 5px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        th {
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            text-align: left;
+        }
+
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .button {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 30px;
+            text-decoration: none;
+            font-weight: bold;
+            transition: transform 0.3s, box-shadow 0.3s;
+            margin: 10px 5px;
+        }
+
+        .button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+            
+            .features-grid,
+            .tech-stack {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .roadmap {
+            list-style: none;
+            margin: 20px 0;
+        }
+
+        .roadmap li {
+            padding: 10px 0 10px 30px;
+            position: relative;
+            font-size: 1.1em;
+        }
+
+        .roadmap li:before {
+            content: "☐";
+            position: absolute;
+            left: 0;
+            color: #667eea;
+            font-size: 1.3em;
+        }
+
+        @media print {
+            body {
+                background: white;
+                padding: 0;
+            }
+            
+            .container {
+                box-shadow: none;
+            }
+            
+            .button {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎬 NeuroCards Bot</h1>
+            <p>Автоматизированная платформа для генерации видеоконтента с AI</p>
+            <div style="margin-top: 30px;">
+                <span class="badge">Python 3.11+</span>
+                <span class="badge">aiogram 3.x</span>
+                <span class="badge">PostgreSQL</span>
+                <span class="badge">Redis</span>
+                <span class="badge">Docker</span>
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="toc">
+                <h2>📋 Содержание</h2>
+                <ul>
+                    <li><a href="#features">🚀 Ключевые возможности</a></li>
+                    <li><a href="#value">💎 Ценность решения</a></li>
+                    <li><a href="#architecture">🏗 Архитектура</a></li>
+                    <li><a href="#tech-stack">🛠 Технический стек</a></li>
+                    <li><a href="#quick-start">⚡ Быстрый старт</a></li>
+                    <li><a href="#deployment">🌐 Развертывание</a></li>
+                    <li><a href="#monitoring">📊 Мониторинг</a></li>
+                    <li><a href="#api">🔌 API и интеграции</a></li>
+                    <li><a href="#scaling">📈 Масштабирование</a></li>
+                    <li><a href="#config">⚙️ Конфигурация</a></li>
+                </ul>
+            </div>
+
+            <div class="info">
+                <strong>📖 О проекте:</strong> Telegram-бот для создания нейроконтента - образовательных видеокарточек и коротких Reels с использованием нейросетевой генерации видео через API Kling AI. Полностью асинхронная архитектура с поддержкой масштабирования воркеров и ротацией прокси.
+            </div>
+
+            <!-- FEATURES -->
+            <section id="features">
+                <h2>🚀 Ключевые возможности</h2>
+                
+                <h3>Продуктовые функции</h3>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <h4>🎨 Генерация Нейрокарточек</h4>
+                        <p>Создание образовательных видео из текста и изображения</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>📱 Создание Reels</h4>
+                        <p>Короткие вирусные видео с AI-генерацией</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🎁 Бесплатные токены</h4>
+                        <p>2 бесплатные генерации для новых пользователей</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>👤 Личный кабинет</h4>
+                        <p>Отслеживание баланса и истории генераций</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>📊 Админ дашборд</h4>
+                        <p>Мониторинг системы в реальном времени</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🎭 Smart Prompting</h4>
+                        <p>Автоматическое улучшение промптов через GPT-4</p>
+                    </div>
+                </div>
+
+                <h3>Технические возможности</h3>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <h4>🔥 Hot Proxy Rotation</h4>
+                        <p>Автоматическая ротация прокси при блокировках</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>⚙️ Multi-Worker</h4>
+                        <p>Горизонтальное масштабирование обработчиков</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🗄️ PostgreSQL + Redis</h4>
+                        <p>Надёжное хранение данных и очередь задач</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🐳 Docker-Ready</h4>
+                        <p>Развертывание одной командой</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🛡️ Error Recovery</h4>
+                        <p>Автоматический retry с классификацией ошибок</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>📈 Health Checks</h4>
+                        <p>Мониторинг состояния всех компонентов</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VALUE -->
+            <section id="value">
+                <h2>💎 Ценность решения</h2>
+                
+                <div class="value-section">
+                    <h3>Для бизнеса</h3>
+                    <ol>
+                        <li><strong>Монетизация AI-контента</strong> - продажа генераций видео через Telegram</li>
+                        <li><strong>Масштабируемость</strong> - от MVP до enterprise без изменения архитектуры</li>
+                        <li><strong>Низкие расходы</strong> - автоматизация 99% процессов</li>
+                        <li><strong>Быстрый запуск</strong> - от установки до первой продажи за 15 минут</li>
+                    </ol>
+                </div>
+
+                <div class="value-section" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);">
+                    <h3>Для пользователей</h3>
+                    <ol>
+                        <li><strong>Простота использования</strong> - генерация видео в 3 клика</li>
+                        <li><strong>Быстрая обработка</strong> - результат за 3-5 минут</li>
+                        <li><strong>Высокое качество</strong> - профессиональный AI-контент</li>
+                        <li><strong>Доступность 24/7</strong> - бот работает без выходных</li>
+                    </ol>
+                </div>
+
+                <div class="value-section" style="background: linear-gradient(135deg, #d299c2 0%, #fef9d7 100%);">
+                    <h3>Для разработчиков</h3>
+                    <ol>
+                        <li><strong>Чистая архитектура</strong> - модульная структура, легко расширяемая</li>
+                        <li><strong>Полная документация</strong> - каждый компонент задокументирован</li>
+                        <li><strong>Best Practices</strong> - лучшие практики Python/Async</li>
+                        <li><strong>Ready-to-Fork</strong> - легко адаптировать под свои задачи</li>
+                    </ol>
+                </div>
+            </section>
+
+            <!-- ARCHITECTURE -->
+            <section id="architecture">
+                <h2>🏗 Архитектура</h2>
+                <div class="architecture-diagram">
+<pre>┌─────────────────────────────────────────────────────────────┐
+│                      TELEGRAM USERS                          │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   TELEGRAM BOT                               │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │  Webhook     │  │   Polling    │  │   Handlers   │      │
+│  │  (Webhook)   │  │   (Backup)   │  │   (FSM)      │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      REDIS QUEUE                             │
+│            (RQ - Python Redis Queue)                         │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   WORKER POOL                                │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐       │
+│  │ Worker1 │  │ Worker2 │  │ Worker3 │  │ Worker N│       │
+│  └─────────┘  └─────────┘  └─────────┘  └─────────┘       │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+          ┌────────────┼────────────┐
+          │            │            │
+          ▼            ▼            ▼
+    ┌─────────┐  ┌─────────┐  ┌─────────┐
+    │ KIE API │  │ OpenAI  │  │  File   │
+    │ (Video) │  │ (GPT-4) │  │ Storage │
+    └─────────┘  └─────────┘  └─────────┘
+          │            │            │
+          └────────────┼────────────┘
+                       │
+                       ▼
+               ┌──────────────┐
+               │  PostgreSQL  │
+               │  (Database)  │
+               └──────────────┘</pre>
+                </div>
+
+                <h3>Основные компоненты</h3>
+                <table>
+                    <tr>
+                        <th>Слой</th>
+                        <th>Компоненты</th>
+                        <th>Назначение</th>
+                    </tr>
+                    <tr>
+                        <td><strong>Bot Layer</strong></td>
+                        <td>Handlers, FSM, Keyboards</td>
+                        <td>Обработка пользовательского ввода и состояний</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Worker Layer</strong></td>
+                        <td>Job Processor, KIE Client, GPT Prompter</td>
+                        <td>Асинхронная обработка задач генерации</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Storage Layer</strong></td>
+                        <td>PostgreSQL, Redis, File Storage</td>
+                        <td>Хранение данных, очередь, медиафайлы</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Integration Layer</strong></td>
+                        <td>Kling AI, OpenAI, Telegram API</td>
+                        <td>Внешние сервисы и API</td>
+                    </tr>
+                </table>
+            </section>
+
+            <!-- TECH STACK -->
+            <section id="tech-stack">
+                <h2>🛠 Технический стек</h2>
+                <div class="tech-stack">
+                    <div class="tech-category">
+                        <h4>Backend</h4>
+                        <ul>
+                            <li><strong>Python 3.11+</strong></li>
+                            <li><strong>aiogram 3.x</strong> - Telegram Bot</li>
+                            <li><strong>asyncpg</strong> - PostgreSQL драйвер</li>
+                            <li><strong>Redis Queue</strong> - фоновые задачи</li>
+                            <li><strong>httpx</strong> - HTTP запросы</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="tech-category">
+                        <h4>Infrastructure</h4>
+                        <ul>
+                            <li><strong>Docker</strong> - контейнеризация</li>
+                            <li><strong>PostgreSQL 15</strong> - база данных</li>
+                            <li><strong>Redis 7</strong> - кеш и очередь</li>
+                            <li><strong>Nginx</strong> - reverse proxy</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="tech-category">
+                        <h4>AI & API</h4>
+                        <ul>
+                            <li><strong>Kling AI</strong> - video генерация</li>
+                            <li><strong>OpenAI GPT-4</strong> - промпты</li>
+                            <li><strong>aiohttp-socks</strong> - прокси</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- QUICK START -->
+            <section id="quick-start">
+                <h2>⚡ Быстрый старт</h2>
+                
+                <div class="quick-start">
+                    <h3>Предварительные требования</h3>
+                    <ul>
+                        <li>Docker 20.10+</li>
+                        <li>Docker Compose 2.0+</li>
+                        <li>API ключи: Telegram Bot, Kling AI, OpenAI</li>
+                    </ul>
+                </div>
+
+                <h3>1. Клонирование репозитория</h3>
+                <pre><code>git clone https://github.com/kirbudilov01/neurocards-bot.git
+cd neurocards-bot</code></pre>
+
+                <h3>2. Настройка окружения</h3>
+                <pre><code>cp .env.example .env
+nano .env</code></pre>
+
+                <p><strong>Минимальная конфигурация (.env):</strong></p>
+                <pre><code># Telegram Bot
+BOT_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
+
+# PostgreSQL
+POSTGRES_PASSWORD=secure_password_here
+
+# AI APIs
+KIE_API_KEY=key1,key2,key3,key4,key5
+OPENAI_API_KEY=sk-...
+
+# Workers
+WORKER_REPLICAS=5</code></pre>
+
+                <h3>3. Запуск</h3>
+                <pre><code>docker-compose up -d</code></pre>
+
+                <h3>4. Проверка логов</h3>
+                <pre><code>docker-compose logs -f neurocards-polling
+docker-compose logs -f neurocards-worker-1</code></pre>
+
+                <div class="info">
+                    <strong>✅ Готово!</strong> Отправьте <code>/start</code> боту в Telegram!
+                </div>
+            </section>
+
+            <!-- MONITORING -->
+            <section id="monitoring">
+                <h2>📊 Мониторинг и дашборды</h2>
+                
+                <h3>Встроенный админ дашборд</h3>
+                <p>Бот включает административную панель прямо в Telegram:</p>
+                <pre><code>/admin (для администраторов)</code></pre>
+
+                <h4>Метрики в реальном времени:</h4>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <h4>👥 Пользователи</h4>
+                        <p>Общее количество пользователей</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🎬 Видео</h4>
+                        <p>Всего сгенерировано</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>⏱️ Очередь</h4>
+                        <p>Задач в очереди</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🔄 Воркеры</h4>
+                        <p>Активных воркеров</p>
+                    </div>
+                </div>
+
+                <h3>Health Checks</h3>
+                <pre><code># Проверка бота
+curl http://localhost:8080/healthz
+
+# Проверка БД
+docker exec neurocards-postgres pg_isready
+
+# Проверка Redis
+docker exec neurocards-redis redis-cli ping
+
+# Проверка очереди
+docker exec neurocards-redis redis-cli llen rq:queue:default</code></pre>
+            </section>
+
+            <!-- API -->
+            <section id="api">
+                <h2>🔌 API и интеграции</h2>
+                
+                <h3>Telegram Bot API</h3>
+                <table>
+                    <tr>
+                        <th>Команда</th>
+                        <th>Описание</th>
+                    </tr>
+                    <tr>
+                        <td><code>/start</code></td>
+                        <td>Регистрация и главное меню</td>
+                    </tr>
+                    <tr>
+                        <td><code>/menu</code></td>
+                        <td>Вернуться в главное меню</td>
+                    </tr>
+                    <tr>
+                        <td><code>/cabinet</code></td>
+                        <td>Личный кабинет</td>
+                    </tr>
+                    <tr>
+                        <td><code>/cancel</code></td>
+                        <td>Отменить текущее действие</td>
+                    </tr>
+                </table>
+
+                <h3>Database Schema</h3>
+                <pre><code>-- Пользователи
+CREATE TABLE users (
+    tg_id BIGINT PRIMARY KEY,
+    username TEXT,
+    full_name TEXT,
+    credits INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Задачи генерации
+CREATE TABLE generation_jobs (
+    job_id TEXT PRIMARY KEY,
+    tg_id BIGINT REFERENCES users(tg_id),
+    type TEXT, -- 'neurocard' or 'reels'
+    status TEXT, -- 'queued', 'processing', 'completed', 'failed'
+    prompt TEXT,
+    input_path TEXT,
+    output_path TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    completed_at TIMESTAMPTZ
+);</code></pre>
+            </section>
+
+            <!-- SCALING -->
+            <section id="scaling">
+                <h2>📈 Масштабирование</h2>
+                
+                <h3>Горизонтальное масштабирование воркеров</h3>
+                <pre><code># Увеличить до 50 воркеров
+docker-compose up --scale neurocards-worker=50 -d</code></pre>
+
+                <h3>Системные требования</h3>
+                <table>
+                    <tr>
+                        <th>Конфигурация</th>
+                        <th>CPU</th>
+                        <th>RAM</th>
+                        <th>Disk</th>
+                        <th>Workers</th>
+                    </tr>
+                    <tr>
+                        <td><strong>Минимальная</strong></td>
+                        <td>2 cores</td>
+                        <td>2 GB</td>
+                        <td>20 GB</td>
+                        <td>2-5</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Рекомендуемая</strong></td>
+                        <td>4+ cores</td>
+                        <td>8+ GB</td>
+                        <td>100+ GB SSD</td>
+                        <td>10-20</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Production (100 генераций)</strong></td>
+                        <td>8+ cores</td>
+                        <td>16+ GB</td>
+                        <td>500+ GB SSD</td>
+                        <td>20-50</td>
+                    </tr>
+                </table>
+            </section>
+
+            <!-- CONFIG -->
+            <section id="config">
+                <h2>⚙️ Конфигурация</h2>
+                
+                <h3>Переменные окружения</h3>
+                <table>
+                    <tr>
+                        <th>Переменная</th>
+                        <th>Описание</th>
+                        <th>Пример</th>
+                    </tr>
+                    <tr>
+                        <td><code>BOT_TOKEN</code></td>
+                        <td>Telegram Bot Token</td>
+                        <td>123456:ABC-DEF...</td>
+                    </tr>
+                    <tr>
+                        <td><code>DATABASE_URL</code></td>
+                        <td>PostgreSQL подключение</td>
+                        <td>postgresql://user:pass@host/db</td>
+                    </tr>
+                    <tr>
+                        <td><code>REDIS_URL</code></td>
+                        <td>Redis сервер</td>
+                        <td>redis://redis:6379/0</td>
+                    </tr>
+                    <tr>
+                        <td><code>KIE_API_KEY</code></td>
+                        <td>Kling AI ключи</td>
+                        <td>key1,key2,key3</td>
+                    </tr>
+                    <tr>
+                        <td><code>OPENAI_API_KEY</code></td>
+                        <td>OpenAI ключ</td>
+                        <td>sk-...</td>
+                    </tr>
+                    <tr>
+                        <td><code>WORKER_REPLICAS</code></td>
+                        <td>Количество воркеров</td>
+                        <td>5</td>
+                    </tr>
+                </table>
+
+                <h3>Формат прокси (proxies.txt)</h3>
+                <pre><code>ip:port:username:password
+192.168.1.1:8080:user1:pass1
+10.0.0.1:3128:user2:pass2</code></pre>
+            </section>
+
+            <!-- DOWNLOAD -->
+            <section id="download">
+                <h2>📦 Скачать проект</h2>
+                
+                <div class="info">
+                    <h3>Готовые архивы:</h3>
+                    <p><strong>Полный архив проекта:</strong> <code>/workspaces/neurocards-bot-release.tar.gz</code> (9.7 MB)</p>
+                    <p>Архив не включает .git, __pycache__, .env и временные файлы</p>
+                </div>
+
+                <h3>Создание архива вручную:</h3>
+                <pre><code>tar -czf neurocards-bot.tar.gz \
+    --exclude='.git' \
+    --exclude='__pycache__' \
+    --exclude='*.pyc' \
+    --exclude='.env' \
+    --exclude='storage' \
+    neurocards-bot/</code></pre>
+
+                <h3>Загрузка на GitHub Release:</h3>
+                <pre><code>gh release create v1.0.0 \
+    neurocards-bot.tar.gz \
+    --title "NeuroCards Bot v1.0.0" \
+    --notes "Production ready release"</code></pre>
+
+                <div style="text-align: center; margin: 40px 0;">
+                    <a href="https://github.com/kirbudilov01/neurocards-bot" class="button">⭐ Star на GitHub</a>
+                    <a href="https://github.com/kirbudilov01/neurocards-bot/archive/refs/heads/main.zip" class="button">📥 Скачать ZIP</a>
+                </div>
+            </section>
+
+            <!-- ROADMAP -->
+            <section id="roadmap">
+                <h2>🎯 Roadmap</h2>
+                <ul class="roadmap">
+                    <li>Реферальная система</li>
+                    <li>Платёжные системы (ЮКасса, Stripe)</li>
+                    <li>Админ панель (web)</li>
+                    <li>Statsd/Prometheus метрики</li>
+                    <li>Поддержка больших файлов (>20MB)</li>
+                    <li>Multi-язык интерфейса</li>
+                    <li>API для интеграций</li>
+                    <li>Mobile app</li>
+                </ul>
+            </section>
+        </div>
+
+        <div class="footer">
+            <h3>🤝 Поддержка и контакты</h3>
+            <p>
+                <strong>Telegram:</strong> <a href="https://t.me/fabricbothelper">@fabricbothelper</a><br>
+                <strong>GitHub:</strong> <a href="https://github.com/kirbudilov01/neurocards-bot">kirbudilov01/neurocards-bot</a><br>
+                <strong>Email:</strong> support@neurocards.bot
+            </p>
+            <hr style="margin: 30px 0; opacity: 0.3;">
+            <p style="font-size: 0.9em; opacity: 0.8;">
+                Made with ❤️ and ☕ by <a href="https://github.com/kirbudilov01">kirbudilov01</a><br>
+                © 2026 NeuroCards Bot | MIT License
+            </p>
+            <p style="margin-top: 20px;">
+                <strong>⭐ Star this repo if you find it useful!</strong>
+            </p>
+        </div>
+    </div>
+</body>
+</html>

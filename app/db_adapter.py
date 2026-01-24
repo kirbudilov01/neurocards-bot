@@ -8,16 +8,6 @@ import logging
 import os
 from functools import partial
 from typing import Any, Callable, Dict, Optional, TypeVar
-from pathlib import Path
-
-# Загружаем .env файл если он существует
-try:
-    from dotenv import load_dotenv
-    env_path = Path(__file__).parent.parent / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-except ImportError:
-    pass  # dotenv не установлен, используем системные переменные
 
 T = TypeVar("T")
 
@@ -30,9 +20,7 @@ async def run_blocking(func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
 
 
 # Определяем тип базы данных
-# Если есть DATABASE_URL, используем PostgreSQL напрямую
-DATABASE_URL = os.getenv("DATABASE_URL")
-DATABASE_TYPE = "postgres" if DATABASE_URL else "supabase"
+DATABASE_TYPE = os.getenv("DATABASE_TYPE", "supabase").lower()  # supabase или postgres
 
 if DATABASE_TYPE == "postgres":
     # Используем прямое подключение к PostgreSQL через asyncpg
@@ -74,32 +62,11 @@ if DATABASE_TYPE == "postgres":
             logger.info("✅ PostgreSQL pool closed")
 
 else:
-<<<<<<< HEAD
     # PostgreSQL is required - Supabase support removed
     raise RuntimeError(
         "USE_POSTGRES must be 'true'. Supabase support has been removed. "
         "Please set USE_POSTGRES=true and configure PostgreSQL connection."
     )
-=======
-    # Используем Supabase SDK (для обратной совместимости)
-    from supabase import create_client, Client
-    from app.config import SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-    
-    # Инициализируем Supabase client
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-    logger.info(f"✅ Supabase client initialized for {SUPABASE_URL}")
-    
-    # Заглушки для совместимости API
-    async def init_db_pool():
-        logger.info("✅ Using Supabase client (no pool needed)")
-        return None
-    
-    async def get_pool():
-        return None
-    
-    async def close_db_pool():
-        logger.info("✅ Supabase client closed")
->>>>>>> 8f6520fa9541fa7c865a7c36d6faea7967bcf8fc
 
 
 # ---------------- USERS ----------------

@@ -13,7 +13,7 @@ def kb_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎬 Создать НЕЙРОВИДЕО", callback_data="make_reels")],
         [InlineKeyboardButton(text="👤 Личный кабинет", callback_data="cabinet")],
-        [InlineKeyboardButton(text="🆘 Служба поддержки", callback_data="support")],
+        [InlineKeyboardButton(text="🆘 Служба поддержки", url="https://t.me/fabricbothelper")],
     ])
 
 

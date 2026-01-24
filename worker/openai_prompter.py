@@ -79,14 +79,11 @@ def build_prompt_with_gpt(system: str, instructions: str, product_text: str, ext
         "Content-Type": "application/json",
     }
     
-    # Получить прокси через ProxyRotator (уже инициализирован в video_processor)
-    from app.proxy_rotator import get_proxy_rotator
+    # Получить прокси из файла
+    proxy_dict = get_proxy_for_openai()
     
-    proxy_rotator = get_proxy_rotator()
-    proxy_url = proxy_rotator.get_next_proxy() if proxy_rotator else None
-    
-    if proxy_url:
-        logger.info(f"🔄 OpenAI request will use proxy: {proxy_url[:30]}...")
+    if proxy_dict:
+        logger.info(f"🔄 OpenAI request will use proxy")
     else:
         logger.warning("⚠️ OpenAI request WITHOUT proxy (may fail in Russia)")
 
@@ -94,10 +91,10 @@ def build_prompt_with_gpt(system: str, instructions: str, product_text: str, ext
     last_error = None
     for attempt in range(3):
         try:
-            # httpx.Client(proxies=...) принимает строку или dict вида {"all://": "url"}
+            # httpx.Client(proxies=...) принимает dict вида {"http://": "url", "https://": "url"}
             client_kwargs = {"timeout": 30.0}
-            if proxy_url:
-                client_kwargs["proxies"] = proxy_url  # передаём строку напрямую
+            if proxy_dict:
+                client_kwargs["proxies"] = proxy_dict
             
             with httpx.Client(**client_kwargs) as client:
                 r = client.post(

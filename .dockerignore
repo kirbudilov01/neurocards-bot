@@ -1,5 +1,4 @@
-<<<<<<< HEAD
-# Git
+в# Git
 .git
 .gitignore
 .gitattributes
@@ -69,32 +68,3 @@ systemd/
 # Temporary
 *.tmp
 .cache/
-=======
-.git
-.gitignore
-.env
-.env.*
-__pycache__
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-*.egg
-*.egg-info
-dist
-build
-*.log
-.vscode
-.idea
-*.md
-!README.md
-tests/
-scripts/
-supabase/
-systemd/
-render.yaml
-bot.log
-worker.log
-deploy.log
->>>>>>> 8f6520fa9541fa7c865a7c36d6faea7967bcf8fc

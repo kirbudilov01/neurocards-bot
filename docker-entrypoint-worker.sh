@@ -19,15 +19,15 @@ echo "✅ Storage initialized"
 # Генерируем уникальное имя воркера (PID + случайное число)
 WORKER_NAME="worker-$(hostname)-$$-${RANDOM}"
 
-# Запускаем RQ worker (без --burst для непрерывной работы)
+# Настройки для длительных задач:
+# --worker-ttl 3600: worker живет до 1 часа без heartbeat (для долгой генерации)
 # --job-monitoring-interval 30: проверка heartbeat каждые 30 секунд
-# --worker-ttl 2400: worker живет до 2400 секунд без heartbeat
 # --disable-default-exception-handler: отключаем pubsub для стабильности
 # Timeout задачи 1800s (30 минут) передается через enqueue()
 exec python -m rq.cli worker neurocards \
   --url "$REDIS_URL" \
   --name "$WORKER_NAME" \
-  --worker-ttl 2400 \
+  --worker-ttl 3600 \
   --job-monitoring-interval 30 \
   --disable-default-exception-handler \
   --verbose

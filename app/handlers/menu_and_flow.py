@@ -1,6 +1,6 @@
 import logging
 from aiogram import Router, F, Bot
-from aiogram.types import CallbackQuery, Message, FSInputFile
+from aiogram.types import CallbackQuery, Message, FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
 
 from app import texts
@@ -22,37 +22,11 @@ from app.utils import ensure_dict
 router = Router()
 
 PARSE_MODE = "HTML"
-MENU_PHOTO_PATH = "assets/menu.jpg"
+MENU_PHOTO_PATH = "/app/assets/menu.jpg"
 MENU_TEXT = getattr(texts, "MENU", "Выберите действие 👇")
 
 
-async def show_menu(message, text, reply_markup, edit=True):
-    """Показать меню. Если edit=True, редактирует текущее сообщение, иначе создаёт новое"""
-    if edit and message.photo:
-        # Если есть фото в сообщении - редактируем caption
-        try:
-            await message.edit_caption(
-                caption=text,
-                reply_markup=reply_markup,
-                parse_mode=PARSE_MODE,
-            )
-            return
-        except Exception:
-            pass  # Если не получилось отредактировать, создадим новое
-    
-    if edit:
-        # Пытаемся отредактировать текст (если это текстовое сообщение)
-        try:
-            await message.edit_text(
-                text=text,
-                reply_markup=reply_markup,
-                parse_mode=PARSE_MODE,
-            )
-            return
-        except Exception:
-            pass  # Если не получилось, создадим новое
-    
-    # Создаём новое сообщение с фото
+async def show_menu(message, text, reply_markup):
     try:
         await message.answer_photo(
             FSInputFile(MENU_PHOTO_PATH),
@@ -79,97 +53,18 @@ async def back_to_menu(cb: CallbackQuery, state: FSMContext):
     await show_menu(cb.message, MENU_TEXT, kb_menu())
 
 
-@router.callback_query(F.data == "product_link")
-async def product_link_handler(cb: CallbackQuery):
-    """Обработчик кнопки 'Ссылка на товар'"""
-    await cb.answer()
-    try:
-        await cb.message.edit_text(
-            "🔧 <b>Функция в разработке</b>\n\n"
-            "⏳ Скоро ты сможешь просто отправить ссылку на товар с маркетплейса, "
-            "и я сама скачаю все фото!\n\n"
-            "А пока — пришли фото вручную 📸",
-            parse_mode=PARSE_MODE,
-            reply_markup=kb_back_to_menu(),
-        )
-    except Exception:
-        await cb.message.answer(
-            "🔧 <b>Функция в разработке</b>\n\n"
-            "⏳ Скоро ты сможешь просто отправить ссылку на товар с маркетплейса, "
-            "и я сама скачаю все фото!\n\n"
-            "А пока — пришли фото вручную 📸",
-            parse_mode=PARSE_MODE,
-            reply_markup=kb_back_to_menu(),
-        )
-
-
-@router.callback_query(F.data.startswith("again:"))
-async def again(cb: CallbackQuery, state: FSMContext, bot: Bot):
-    """Повторная генерация видео с теми же параметрами"""
-    try:
-        await cb.answer("🔁 Запускаю еще одно видео...")
-        
-        kind = cb.data.split(":", 1)[1]  # Извлекаем тип (reels/shorts/ugc)
-        tg_user_id = cb.from_user.id
-        
-        # Получаем последнюю задачу пользователя
-        user_jobs = await get_user_jobs(tg_user_id, limit=1)
-        if not user_jobs:
-            await cb.message.answer(
-                "⚠️ Не найду предыдущую задачу. Загрузи фото заново.",
-                reply_markup=kb_back_to_menu(),
-                parse_mode=PARSE_MODE,
-            )
-            await state.clear()
-            return
-        
-        last_job = user_jobs[0]
-        photo_path = last_job.get("input_photo_path")
-        product_info = last_job.get("product_info", {})
-        
-        if not photo_path:
-            await cb.message.answer(
-                "⚠️ Не удалось восстановить фото. Загрузи заново.",
-                reply_markup=kb_back_to_menu(),
-                parse_mode=PARSE_MODE,
-            )
-            await state.clear()
-            return
-        
-        # Отправляем стартовое сообщение
-        await cb.message.answer(
-            f"✅ <b>Принял!</b>\n\n"
-            f"🎬 Генерация видео запущена!\n\n"
-            f"⏱ <b>Ожидайте</b> — это может занять от 1 до 30 минут в зависимости от загруженности Sora 2.\n\n"
-            f"Я пришлю результаты сюда по мере готовности.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="🔁 Сделать еще видео", callback_data=f"again:{kind}")
-            ]]),
-            parse_mode=PARSE_MODE,
-        )
-        
-        # Запускаем генерацию с теми же параметрами
-        idempotency_key = f"again_{cb.id}"
-        await start_generation(
-            bot=bot,
-            tg_user_id=tg_user_id,
-            idempotency_key=idempotency_key,
-            photo_file_id=photo_path,  # Используем сохраненный путь
-            kind=kind,
-            product_info=product_info,  # Переиспользуем информацию о товаре
-            extra_wishes=last_job.get("extra_wishes", ""),
-            template_id=last_job.get("template_id", "ugc"),
-        )
-        
-        await state.clear()
-        
-    except Exception as e:
-        logging.error(f"Error in again handler: {e}", exc_info=True)
-        await cb.message.answer(
-            "⚠️ Ошибка, попробуй ещё раз",
-            reply_markup=kb_back_to_menu(),
-            parse_mode=PARSE_MODE,
-        )
+# ❌ ОТКЛЮЧЕНО: Кнопка "Сделать еще видео" не работает, так как file_id картинки устаревает
+# Пользователь должен загрузить картинку заново через обычный флоу
+#
+# @router.callback_query(F.data.startswith("again:"))
+# async def again(cb: CallbackQuery, state: FSMContext, bot: Bot):
+#     """Повторная генерация видео с теми же параметрами"""
+#     await cb.answer("⚠️ Эта функция временно недоступна. Пожалуйста, загрузите фото заново.")
+#     await cb.message.answer(
+#         "⚠️ Функция повтора временно недоступна.\n\nПожалуйста, загрузите фото заново для новой генерации.",
+#         reply_markup=kb_back_to_menu(),
+#         parse_mode=PARSE_MODE,
+#     )
 
 
 @router.callback_query(F.data == "cabinet")
@@ -184,18 +79,11 @@ async def cabinet(cb: CallbackQuery):
             "CABINET",
             "👤 <b>Личный кабинет</b>\n\n💳 Баланс: <b>{credits}</b>\n\nВыбери действие:",
         )
-        try:
-            await cb.message.edit_text(
-                cabinet_tpl.format(credits=bal),
-                reply_markup=kb_cabinet(),
-                parse_mode=PARSE_MODE,
-            )
-        except Exception:
-            await cb.message.answer(
-                cabinet_tpl.format(credits=bal),
-                reply_markup=kb_cabinet(),
-                parse_mode=PARSE_MODE,
-            )
+        await cb.message.answer(
+            cabinet_tpl.format(credits=bal),
+            reply_markup=kb_cabinet(),
+            parse_mode=PARSE_MODE,
+        )
     except Exception as e:
         logging.error(f"Error in cabinet: {e}", exc_info=True)
         await cb.message.answer(
@@ -208,53 +96,27 @@ async def cabinet(cb: CallbackQuery):
 @router.callback_query(F.data == "topup")
 async def topup(cb: CallbackQuery):
     await cb.answer()
-    try:
-        await cb.message.edit_text(
-            getattr(texts, "TOPUP_TEXT", "Пополнение баланса"),
-            reply_markup=kb_topup(),
-            parse_mode=PARSE_MODE,
-        )
-    except Exception:
-        await cb.message.answer(
-            getattr(texts, "TOPUP_TEXT", "Пополнение баланса"),
-            reply_markup=kb_topup(),
-            parse_mode=PARSE_MODE,
-        )
+    await cb.message.answer(
+        getattr(texts, "TOPUP_TEXT", "Пополнение баланса"),
+        reply_markup=kb_topup(),
+        parse_mode=PARSE_MODE,
+    )
 
 
 @router.callback_query(F.data.startswith("pay:"))
 async def pay_stub(cb: CallbackQuery):
     await cb.answer()
-    try:
-        await cb.message.edit_text(
-            getattr(texts, "PAY_STUB", "Оплата в разработке."),
-            reply_markup=kb_cabinet(),
-            parse_mode=PARSE_MODE,
-        )
-    except Exception:
-        await cb.message.answer(
-            getattr(texts, "PAY_STUB", "Оплата в разработке."),
-            reply_markup=kb_cabinet(),
-            parse_mode=PARSE_MODE,
-        )
+    await cb.message.answer(
+        getattr(texts, "PAY_STUB", "Оплата в разработке."),
+        reply_markup=kb_cabinet(),
+        parse_mode=PARSE_MODE,
+    )
 
 
-@router.callback_query(F.data == "support")
-async def support(cb: CallbackQuery):
-    await cb.answer()
-    txt = getattr(texts, "SUPPORT_TEXT", "🆘 Служба поддержки: {url}")
-    try:
-        await cb.message.edit_text(
-            txt.format(url="https://t.me/your_support"),
-            reply_markup=kb_menu(),
-            parse_mode=PARSE_MODE,
-        )
-    except Exception:
-        await cb.message.answer(
-            txt.format(url="https://t.me/your_support"),
-            reply_markup=kb_menu(),
-            parse_mode=PARSE_MODE,
-        )
+# @router.callback_query(F.data == "support")  
+# async def support(cb: CallbackQuery):
+#     # Удалён - теперь кнопка поддержки это URL кнопка (https://t.me/fabricbothelper)
+#     pass
 
 
 @router.callback_query(F.data == "make_reels")
@@ -276,7 +138,7 @@ async def make_reels(cb: CallbackQuery, state: FSMContext):
 
     await cb.message.answer(
         full_text,
-        reply_markup=kb_photo_request(),
+        reply_markup=kb_back_to_menu(),
         parse_mode=PARSE_MODE,
     )
 
@@ -483,15 +345,13 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
             await state.clear()
             return
 
-        # Отправляем сразу уведомление о начале генерации с кнопкой для еще одного видео
+        # Отправляем сразу уведомление о начале генерации
         await cb.message.answer(
             f"✅ <b>Принял!</b>\n\n"
             f"🎬 Генерация <b>{video_count} {'видео' if video_count == 1 else 'видео'}</b> запущена!\n\n"
             f"⏱ <b>Ожидайте</b> — это может занять от 1 до 30 минут в зависимости от загруженности Sora 2.\n\n"
             f"Я пришлю результаты сюда по мере готовности.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="🔁 Сделать еще видео", callback_data=f"again:{kind}")
-            ]]),
+            reply_markup=kb_back_to_menu(),
             parse_mode=PARSE_MODE,
         )
 
@@ -546,14 +406,7 @@ async def retry_same_product(cb: CallbackQuery, state: FSMContext):
         return
     
     # Восстанавливаем данные в state
-<<<<<<< HEAD
     product_info = ensure_dict(job["product_info"])
-=======
-    import json
-    product_info = job["product_info"]
-    if isinstance(product_info, str):
-        product_info = json.loads(product_info)
->>>>>>> 8f6520fa9541fa7c865a7c36d6faea7967bcf8fc
     
     await state.update_data(
         photo_file_id=job["input_photo_path"],

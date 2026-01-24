@@ -25,6 +25,10 @@ WEBHOOK_SECRET_TOKEN = os.getenv("WEBHOOK_SECRET_TOKEN")
 # Support & UI
 SUPPORT_URL = os.getenv("SUPPORT_URL", "https://t.me/fabricbothelper")
 
+# Welcome video file_id (after first upload to Telegram)
+# If empty, will use FSInputFile to upload from disk (slow!)
+WELCOME_VIDEO_FILE_ID = os.getenv("WELCOME_VIDEO_FILE_ID", "")
+
 # Proxy Configuration
 PROXY_FILE = os.getenv("PROXY_FILE", "/app/proxies.txt")
 PROXY_COOLDOWN = int(os.getenv("PROXY_COOLDOWN", "300"))  # 5 минут по умолчанию
