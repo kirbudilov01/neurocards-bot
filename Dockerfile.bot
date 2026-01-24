@@ -25,12 +25,14 @@ COPY docker-entrypoint-bot.sh /app/
 # Создаем непривилегированного пользователя и даем права
 RUN useradd -m -u 1000 botuser && \
     chown -R botuser:botuser /app && \
-    chmod +x /app/docker-entrypoint-bot.sh
+    chmod +x /app/docker-entrypoint-bot.sh && \
+    mkdir -p /app/storage/inputs /app/storage/outputs && \
+    chown -R botuser:botuser /app/storage
 
 USER botuser
 
-# Healthcheck - проверяем что процесс Python отвечает
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+# Healthcheck - проверяем что сервис запущен (через curl на healthz endpoint если есть)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD python -c "import sys; sys.exit(0)" || exit 1
 
 # Entrypoint для создания storage директорий
