@@ -142,6 +142,8 @@ def build_script_for_job(job: dict) -> str:
     """
     ✅ ВАЖНО: тут выбираем шаблон по job.template_id
     """
+    logger.info(f"🔧 Building script for job {job.get('id')}")
+    
     template_id = (job.get("template_id") or "ugc").strip()
     tpl = TEMPLATES.get(template_id) or TEMPLATES.get("ugc")
 
@@ -166,12 +168,18 @@ def build_script_for_job(job: dict) -> str:
         return user_prompt
 
     # GPT → сценарий/промпт
-    return build_prompt_with_gpt(
-        system=tpl["system"],
-        instructions=tpl["instructions"],
-        product_text=product_text,
-        extra_wishes=extra_wishes,
-    )
+    try:
+        script = build_prompt_with_gpt(
+            system=tpl["system"],
+            instructions=tpl["instructions"],
+            product_text=product_text,
+            extra_wishes=extra_wishes,
+        )
+        logger.info(f"✅ Script built successfully: {script[:100]}...")
+        return script
+    except Exception as e:
+        logger.error(f"❌ Failed to build script via GPT: {repr(e)}", exc_info=True)
+        raise
 
 
 async def main():
@@ -237,7 +245,12 @@ async def main():
                 script = build_script_for_job(job)
                 logger.info(f"📝 Generated script (first 200 chars): {script[:200]}...")
 
-                task_id, api_key = create_task_sora_i2v(prompt=script, image_url=image_url)
+                try:
+                    task_id, api_key = create_task_sora_i2v(prompt=script, image_url=image_url)
+                except Exception as e:
+                    logger.error(f"❌ Failed to create KIE task: {repr(e)}", exc_info=True)
+                    raise
+                
                 if not task_id:
                     raise RuntimeError("KIE: could not extract task_id")
                 
@@ -387,32 +400,38 @@ async def main():
                         error_type = KieErrorType.UNKNOWN
                         error_msg = str(e)
                         
+                        logger.info(f"🔍 Processing error for user {tg_user_id}: {type(e).__name__} - {error_msg[:100]}")
+                        
                         # Проверяем OpenAI ошибки
                         if hasattr(e, "openai_info"):
                             try:
                                 error_type, error_msg = classify_kie_error(e.openai_info)
-                                logger.info(f"🔍 OpenAI error classified: {error_type} - {error_msg}")
+                                logger.info(f"✅ OpenAI error classified as: {error_type.value} - {error_msg[:100]}")
                             except Exception as classify_error:
                                 logger.error(f"⚠️ Failed to classify OpenAI error: {classify_error}")
                         # Проверяем KIE ошибки
                         elif hasattr(e, "kie_info"):
                             try:
                                 error_type, error_msg = classify_kie_error(e.kie_info)
-                                logger.info(f"🔍 KIE error classified in outer handler: {error_type} - {error_msg}")
+                                logger.info(f"✅ KIE error classified as: {error_type.value} - {error_msg[:100]}")
                             except Exception as classify_error:
-                                logger.error(f"⚠️ Failed to classify KIE error in outer handler: {classify_error}")
+                                logger.error(f"⚠️ Failed to classify KIE error: {classify_error}")
+                        else:
+                            logger.warning(f"⚠️ Exception has no error info (openai_info/kie_info), will use generic message")
                         
                         user_msg = get_user_error_message(error_type)
                         if error_type == KieErrorType.UNKNOWN:
                             user_msg = f"❌ Произошла ошибка генерации. 1 кредит вернулся на баланс ✅\n{error_msg}"
 
+                        logger.info(f"📤 Sending message to user {tg_user_id}: {user_msg[:50]}...")
                         await bot.send_message(
                             tg_user_id,
                             user_msg,
                             reply_markup=kb_result(job.get("kind") or "reels"),
                         )
+                        logger.info(f"✅ Message sent to user {tg_user_id}")
                 except Exception as notify_error:
-                    logger.error(f"❌ Failed to notify user: {notify_error}")
+                    logger.error(f"❌ Failed to notify user {tg_user_id}: {notify_error}", exc_info=True)
 
             await asyncio.sleep(1)
     finally:
