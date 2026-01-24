@@ -52,6 +52,7 @@ services:
       BOT_TOKEN: ${BOT_TOKEN}
       
       # Database
+      USE_POSTGRES: "true"
       DATABASE_TYPE: postgres
       DATABASE_URL: postgresql://${POSTGRES_USER:-neurocards}:${POSTGRES_PASSWORD}@postgres:5432/neurocards
       
