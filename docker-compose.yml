@@ -50,6 +50,7 @@ services:
     environment:
       # Telegram
       BOT_TOKEN: ${BOT_TOKEN}
+      WELCOME_VIDEO_FILE_ID: ${WELCOME_VIDEO_FILE_ID}
       
       # Database
       USE_POSTGRES: "true"
