@@ -48,12 +48,13 @@ def classify_kie_error(info: Dict[str, Any]) -> tuple[KieErrorType, str]:
         "nsfw", "explicit", "harmful", "offensive", "abuse", "illegal",
         "copyright", "trademark", "privacy", "terms of service", "tos",
         "sora 2", "sora2", "photorealistic people", "photorealistic", "realistic people", "human", "people",
-        "suggestive", "racy", "sexual", "nude", "adult", "mature", "violent", "weapon", "gore"
+        "suggestive", "racy", "sexual", "nude", "adult", "mature", "violent", "weapon", "gore",
+        "forbidden", "403"
     ]
     if any(keyword in error_lower for keyword in policy_keywords):
         return (KieErrorType.USER_VIOLATION, error_msg)
-    if status_code == 400:
-        # KIE возвращает 400 при нарушении правил Sora 2 — считаем это user violation
+    if status_code in {400, 403}:
+        # KIE возвращает 400, OpenAI может вернуть 403 при нарушении правил — считаем это user violation
         return (KieErrorType.USER_VIOLATION, error_msg)
     
     # 2. Billing/Account Issues (BILLING)
