@@ -68,6 +68,7 @@ def enqueue_job(
         timeout=1800,  # Таймаут 30 минут на обработку (в секундах)
         result_ttl=3600,  # Результат храним 1 час
         failure_ttl=86400,  # Ошибки храним 24 часа
+        retry=None,  # НЕ делаем автоматический retry - мы возвращаем кредиты вручную
     )
     
     logger.info(f"✅ Job {job_id} enqueued to Redis, position: {queue.count}")
