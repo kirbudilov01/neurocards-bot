@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копируем код приложения
 COPY app/ ./app/
 COPY database/ ./database/
+COPY assets/ ./assets/
 
 # Копируем proxies.txt
 COPY proxies.txt /app/proxies.txt
