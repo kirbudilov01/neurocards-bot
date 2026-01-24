@@ -61,6 +61,7 @@ services:
       # Storage
       STORAGE_TYPE: ${STORAGE_TYPE:-local}
       STORAGE_BASE_PATH: ${STORAGE_BASE_PATH:-/app/storage}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
     volumes:
       - storage_data:/app/storage
     depends_on:
