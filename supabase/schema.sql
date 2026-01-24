@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS public.jobs (
     product_image_url TEXT,
     product_text TEXT,
     extra_wishes TEXT,
+
+    -- Idempotency key to avoid duplicate jobs
+    idempotency_key TEXT UNIQUE,
     
     -- Generation details
     prompt TEXT,
@@ -68,6 +71,7 @@ CREATE TABLE IF NOT EXISTS public.jobs (
 CREATE INDEX idx_jobs_tg_user_id ON public.jobs(tg_user_id);
 CREATE INDEX idx_jobs_status ON public.jobs(status);
 CREATE INDEX idx_jobs_created_at ON public.jobs(created_at DESC);
+CREATE INDEX idx_jobs_idempotency_key ON public.jobs(idempotency_key);
 CREATE INDEX idx_jobs_kie_task_id ON public.jobs(kie_task_id);
 
 -- ===================================
