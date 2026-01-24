@@ -21,7 +21,7 @@ async def run_blocking(func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
 
 # Определяем тип базы данных
 USE_POSTGRES = os.getenv("USE_POSTGRES", "false").lower() == "true"
-DATABASE_TYPE = os.getenv("DATABASE_TYPE", "supabase").lower()
+DATABASE_TYPE = os.getenv("DATABASE_TYPE", "postgres").lower()  # Default to postgres (Supabase removed)
 
 if USE_POSTGRES or DATABASE_TYPE == "postgres":
     # Используем прямое подключение к PostgreSQL через asyncpg
@@ -108,30 +108,9 @@ async def get_or_create_user(tg_user_id: int, username: Optional[str] = None) ->
             return dict(row)
     
     else:
-        # Supabase версия
-        res = await run_blocking(
-            supabase.table("users")
-            .select("*")
-            .eq("tg_user_id", tg_user_id)
-            .limit(1)
-            .execute
-        )
-        if res.data:
-            if username and res.data[0].get("username") != username:
-                await run_blocking(
-                    supabase.table("users")
-                    .update({"username": username})
-                    .eq("tg_user_id", tg_user_id)
-                    .execute
-                )
-            return res.data[0]
-        
-        ins = await run_blocking(
-            supabase.table("users")
-            .insert({"tg_user_id": tg_user_id, "username": username})
-            .execute
-        )
-        return ins.data[0]
+        # Fallback to PostgreSQL (Supabase support removed)
+        logger.warning("DATABASE_TYPE not set to 'postgres', falling back to PostgreSQL mode")
+        return await get_or_create_user(tg_user_id, username)
 
 
 async def get_user_by_tg_id(tg_user_id: int) -> Optional[Dict[str, Any]]:
