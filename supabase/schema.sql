@@ -75,6 +75,86 @@ CREATE INDEX idx_jobs_idempotency_key ON public.jobs(idempotency_key);
 CREATE INDEX idx_jobs_kie_task_id ON public.jobs(kie_task_id);
 
 -- ===================================
+-- FUNCTION: create_job_and_consume_credit
+-- ===================================
+CREATE OR REPLACE FUNCTION public.create_job_and_consume_credit(
+    p_tg_user_id BIGINT,
+    p_template_type TEXT,
+    p_idempotency_key TEXT,
+    p_photo_path TEXT,
+    p_prompt_input TEXT
+) RETURNS JSON AS $$
+DECLARE
+    v_user_id UUID;
+    v_credits INT;
+    v_job_id TEXT;
+BEGIN
+    -- 1) Найти пользователя и заблокировать строку
+    SELECT id, credits INTO v_user_id, v_credits
+    FROM public.users
+    WHERE tg_user_id = p_tg_user_id
+    FOR UPDATE;
+
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'User % not found', p_tg_user_id;
+    END IF;
+
+    -- 2) Проверить существующий job по идемпотентности
+    SELECT id INTO v_job_id
+    FROM public.jobs
+    WHERE idempotency_key = p_idempotency_key;
+
+    IF v_job_id IS NOT NULL THEN
+        RETURN json_build_object('job_id', v_job_id, 'new_credits', v_credits);
+    END IF;
+
+    -- 3) Проверить баланс
+    IF v_credits <= 0 THEN
+        RAISE EXCEPTION 'Not enough credits';
+    END IF;
+
+    -- 4) Списать 1 кредит
+    UPDATE public.users
+    SET credits = credits - 1, updated_at = NOW()
+    WHERE id = v_user_id;
+
+    -- 5) Создать job
+    v_job_id := gen_random_uuid()::text;
+    INSERT INTO public.jobs (
+        id,
+        tg_user_id,
+        user_id,
+        product_name,
+        product_image_url,
+        product_text,
+        extra_wishes,
+        prompt,
+        status,
+        credits_deducted,
+        idempotency_key
+    ) VALUES (
+        v_job_id,
+        p_tg_user_id,
+        v_user_id,
+        p_template_type,
+        p_photo_path,
+        p_prompt_input,
+        NULL,
+        p_prompt_input,
+        'queued',
+        1,
+        p_idempotency_key
+    );
+
+    -- 6) Вернуть результат
+    RETURN json_build_object(
+        'job_id', v_job_id,
+        'new_credits', v_credits - 1
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+-- ===================================
 -- CREDITS HISTORY TABLE
 -- ===================================
 CREATE TABLE IF NOT EXISTS public.credits_history (
