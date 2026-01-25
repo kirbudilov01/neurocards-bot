@@ -107,13 +107,29 @@ def build_prompt(product_info: dict, template_id: str, extra_wishes: str | None)
         logger.info(f"✅ GPT generated prompt ({len(prompt)} chars): {prompt[:150]}...")
         return prompt
     except Exception as e:
-        logger.error(f"❌ GPT prompt generation failed: {e}, using fallback")
-        # Если это OpenAI ошибка с деталями (photorealistic people и т.п.) - пробросим дальше
-        if hasattr(e, 'openai_info'):
-            raise e
-        # Иначе используем fallback промпт
+        logger.error(f"❌ GPT prompt generation failed: {e}", exc_info=True)
+        
+        # Проверяем наличие информации об ошибке OpenAI
+        info = getattr(e, 'openai_info', None)
+        
+        # Также проверяем в цепочке исключений (cause)
+        if not info and hasattr(e, '__cause__') and hasattr(e.__cause__, 'openai_info'):
+            info = getattr(e.__cause__, 'openai_info')
+        
+        status = None
+        if isinstance(info, dict):
+            status = info.get('status_code')
+            logger.warning(f"⚠️ OpenAI error details: status={status}, data={info}")
+        
+        # ВСЕГДА используем fallback на временные ошибки (429/500/502/503)
+        if status in {429, 500, 502, 503}:
+            fallback_prompt = f"A commercial video showing: {product_text}"
+            logger.info(f"⚡ Using fallback prompt due to OpenAI {status}: {fallback_prompt[:150]}...")
+            return fallback_prompt
+        
+        # Для других ошибок тоже используем fallback (не убиваем job на GPT fail)
         fallback_prompt = f"A commercial video showing: {product_text}"
-        logger.info(f"⚡ Using fallback prompt: {fallback_prompt[:150]}...")
+        logger.info(f"⚡ Using fallback prompt (error: {type(e).__name__}): {fallback_prompt[:150]}...")
         return fallback_prompt
 
 
@@ -362,7 +378,7 @@ async def process_video_generation(job_data: dict) -> dict:
                     try:
                         await update_job(job_id, {
                             "status": "failed",
-                            "error_message": f"Send failed after 3 attempts: {send_error}",
+                            "error": f"Send failed after 3 attempts: {send_error}",
                             "finished_at": datetime.now(timezone.utc)
                         })
                     except Exception as update_error:
@@ -375,10 +391,10 @@ async def process_video_generation(job_data: dict) -> dict:
                 except:
                     pass
         
-        # 7. Обновляем статус в "done"
+        # 7. Обновляем статус в "completed" и сохраняем video_url
         await update_job(job_id, {
-            "status": "done",
-            "output_url": video_url,
+            "status": "completed",
+            "video_url": video_url,
             "finished_at": datetime.now(timezone.utc)
         })
 

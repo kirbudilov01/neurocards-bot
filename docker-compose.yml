@@ -47,6 +47,7 @@ services:
       context: .
       dockerfile: Dockerfile.bot
     container_name: neurocards-polling
+    command: ["python", "-m", "app.main_polling"]
     environment:
       # Telegram
       BOT_TOKEN: ${BOT_TOKEN}
@@ -55,7 +56,7 @@ services:
       # Database
       USE_POSTGRES: "true"
       DATABASE_TYPE: postgres
-      DATABASE_URL: postgresql://${POSTGRES_USER:-neurocards}:${POSTGRES_PASSWORD}@postgres:5432/neurocards
+      DATABASE_URL: postgresql://${POSTGRES_USER:-neurocards}:${POSTGRES_PASSWORD}@neurocards-postgres:5432/neurocards
       
       # Redis
       REDIS_URL: redis://redis:6379/0
@@ -92,7 +93,7 @@ services:
       
       # Database
       DATABASE_TYPE: postgres
-      DATABASE_URL: postgresql://${POSTGRES_USER:-neurocards}:${POSTGRES_PASSWORD}@postgres:5432/neurocards
+      DATABASE_URL: postgresql://${POSTGRES_USER:-neurocards}:${POSTGRES_PASSWORD}@neurocards-postgres:5432/neurocards
       
       # Redis
       REDIS_URL: redis://redis:6379/0
@@ -123,7 +124,7 @@ services:
     environment:
       BOT_TOKEN: ${BOT_TOKEN}
       DATABASE_TYPE: postgres
-      DATABASE_URL: postgresql://${POSTGRES_USER:-neurocards}:${POSTGRES_PASSWORD}@postgres:5432/neurocards
+      DATABASE_URL: postgresql://${POSTGRES_USER:-neurocards}:${POSTGRES_PASSWORD}@neurocards-postgres:5432/neurocards
       REDIS_URL: redis://redis:6379/0
       KIE_API_KEY: ${KIE_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
@@ -148,7 +149,7 @@ services:
     environment:
       BOT_TOKEN: ${BOT_TOKEN}
       DATABASE_TYPE: postgres
-      DATABASE_URL: postgresql://${POSTGRES_USER:-neurocards}:${POSTGRES_PASSWORD}@postgres:5432/neurocards
+      DATABASE_URL: postgresql://${POSTGRES_USER:-neurocards}:${POSTGRES_PASSWORD}@neurocards-postgres:5432/neurocards
       REDIS_URL: redis://redis:6379/0
       KIE_API_KEY: ${KIE_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
@@ -175,7 +176,7 @@ services:
       MB_DB_PORT: 5432
       MB_DB_USER: ${POSTGRES_USER:-neurocards}
       MB_DB_PASS: ${POSTGRES_PASSWORD}
-      MB_DB_HOST: postgres
+      MB_DB_HOST: neurocards-postgres
       MB_JAVA_TOOL_OPTIONS: -Xmx1024m
     ports:
       - "3000:3000"

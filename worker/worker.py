@@ -350,7 +350,7 @@ async def main():
                 max_bytes = 45 * 1024 * 1024
                 if len(data) > max_bytes:
                     logger.info(f"⚠️ Video too large ({len(data)} bytes), sending URL instead")
-                    await update_job(job_id, {"status": "done", "finished_at": "NOW()", "output_url": video_url})
+                    await update_job(job_id, {"status": "completed", "finished_at": "NOW()", "video_url": video_url})
                     await bot.send_message(
                         tg_user_id,
                         f"✅ Видео готово! Ссылка:\n{video_url}",
@@ -372,7 +372,7 @@ async def main():
                         parse_mode="HTML",
                         reply_markup=retry_markup,
                     )
-                    await update_job(job_id, {"status": "done", "finished_at": "NOW()", "output_url": video_url})
+                    await update_job(job_id, {"status": "completed", "finished_at": "NOW()", "video_url": video_url})
                     logger.info(f"✅ Job {job_id} completed successfully")
 
             except Exception as e:
