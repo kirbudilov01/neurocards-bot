@@ -193,20 +193,36 @@ async def process_video_generation(job_data: dict) -> dict:
                 await update_job(job_id, {"kie_task_id": kie_task_id})
                 
                 # 5. Ждем результата (Sora-2 может генерировать до 10 минут)
+                logger.info(f"⏳ Waiting for KIE.AI to generate video (timeout: 600s, poll interval: 10s)...")
                 info = poll_record_info(kie_task_id, api_key_used, timeout_sec=600, interval_sec=10)
+                
+                logger.info(f"📊 KIE response received: {info}")
                 
                 # Проверяем state (может быть fail)
                 data = info.get("data", {}) if isinstance(info, dict) else {}
                 state = data.get("state", "").lower()
+                status = data.get("status", "").lower()
                 
-                if state == "fail" or state == "failed":
+                # 🔍 ЯВНО ЛОГИРУЕМ СТАТУС
+                logger.info(f"🔍 KIE task state='{state}', status='{status}'")
+                
+                if state in {"fail", "failed"} or status in {"fail", "failed", "error"}:
                     fail_msg = data.get("failMsg", "Unknown error")
                     fail_code = data.get("failCode", "")
                     error_detail = f"KIE.AI error (code {fail_code}): {fail_msg}"
-                    logger.error(f"❌ KIE task failed: {error_detail}")
+                    logger.error(f"❌ KIE TASK FAILED: {error_detail}")
+                    logger.error(f"📋 Full KIE response: {info}")
                     # Создаем exception с info для классификации
                     error = RuntimeError(error_detail)
                     error.kie_info = info  # Прикрепляем полный ответ для классификации
+                    raise error
+                
+                # Если timeout произошел
+                if info.get("error") == "timeout":
+                    error_detail = f"KIE.AI generation timeout after 600s"
+                    logger.error(f"⏲️  {error_detail}")
+                    error = RuntimeError(error_detail)
+                    error.kie_info = info
                     raise error
                 
                 video_url = find_video_url(info)
@@ -214,11 +230,12 @@ async def process_video_generation(job_data: dict) -> dict:
                 if not video_url:
                     error_detail = f"Could not find video URL in KIE response"
                     logger.error(f"❌ {error_detail}")
+                    logger.error(f"📋 Full KIE response: {info}")
                     error = RuntimeError(error_detail)
                     error.kie_info = info
                     raise error
                 
-                logger.info(f"🎬 Video URL: {video_url}")
+                logger.info(f"✅ KIE generation SUCCESS! Video URL: {video_url}")
                 
                 # ✅ УСПЕШНО! Видео готово - выходим из KIE loop (НЕ делаем continue!)
                 break

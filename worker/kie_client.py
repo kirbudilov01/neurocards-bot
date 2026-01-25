@@ -76,19 +76,28 @@ def poll_record_info(task_id: str, api_key: str, timeout_sec: int = 300, interva
     Ждём до timeout_sec (по умолчанию 5 минут), опрашиваем каждые interval_sec секунд.
     Возвращаем последний JSON recordInfo (успех/ошибка/таймаут).
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     if not task_id:
         raise RuntimeError("Empty task_id")
 
     deadline = time.time() + timeout_sec
+    poll_count = 0
 
     with httpx.Client(timeout=60.0) as c:
         last = None
         while time.time() < deadline:
+            poll_count += 1
             url = f"{KIE_RECORD_INFO_URL}?taskId={task_id}"
             try:
                 r = c.get(url, headers={"Authorization": f"Bearer {api_key}"})
                 r.raise_for_status()
                 last = r.json()
+                
+                # 🔍 ЛОГИРУЕМ ВСЕ ОТВЕТЫ ДЛЯ ДЕБАГА
+                logger.debug(f"📡 Poll #{poll_count}: KIE response: {last}")
+                
             except httpx.HTTPStatusError as e:
                 info = {
                     "status_code": e.response.status_code if e.response else None,
@@ -100,6 +109,7 @@ def poll_record_info(task_id: str, api_key: str, timeout_sec: int = 300, interva
                         info["data"] = e.response.json()
                     except Exception:
                         info["body"] = e.response.text
+                logger.error(f"🔴 Poll #{poll_count}: KIE HTTP error {info.get('status_code')}: {info}")
                 err = RuntimeError(f"KIE HTTP error {info.get('status_code')}")
                 err.kie_info = info
                 raise err
@@ -112,12 +122,22 @@ def poll_record_info(task_id: str, api_key: str, timeout_sec: int = 300, interva
             else:
                 status = (last.get("status") or "").lower()
 
+            # 🎯 ЛОГИРУЕМ СТАТУС
+            logger.info(f"⏳ Poll #{poll_count}: task={task_id[:8]}... status='{status}'")
+
             if status in {"success", "succeeded", "done", "completed", "finish", "finished"}:
+                logger.info(f"✅ Poll #{poll_count}: SUCCESS - video ready!")
                 return last
             if status in {"failed", "error", "canceled", "cancelled"}:
+                fail_msg = data.get("failMsg") if isinstance(data, dict) else ""
+                fail_code = data.get("failCode") if isinstance(data, dict) else ""
+                logger.error(f"❌ Poll #{poll_count}: FAILED - code={fail_code}, msg={fail_msg}")
                 return last
 
+            remaining_time = deadline - time.time()
+            logger.debug(f"⏱️  Remaining time: {remaining_time:.0f}s, sleeping {interval_sec}s...")
             time.sleep(interval_sec)
 
         # таймаут — вернём последний ответ, чтобы увидеть статус/поля
+        logger.warning(f"⏲️  Poll TIMEOUT after {poll_count} attempts, returning last response")
         return last or {"error": "timeout", "taskId": task_id}
