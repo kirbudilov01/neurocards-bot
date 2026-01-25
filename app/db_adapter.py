@@ -294,15 +294,45 @@ async def refund_credit(tg_user_id: int) -> None:
     if DATABASE_TYPE == "postgres":
         pool = await get_pool()
         async with pool.acquire() as conn:
-            await conn.execute(
+            result = await conn.fetchval(
                 "SELECT refund_credit($1)",
                 tg_user_id
             )
+            logger.info(f"💰 Refund 1 credit to user {tg_user_id}, new balance: {result}")
     
     else:
         await run_blocking(
             supabase.rpc("refund_credit", {"p_tg_user_id": tg_user_id}).execute
         )
+
+
+async def add_credits(tg_user_id: int, amount: int, operation_type: str = "bonus") -> int:
+    """Добавляет кредиты пользователю. Возвращает новый баланс."""
+    
+    if amount <= 0:
+        raise ValueError("Amount must be positive")
+    
+    if DATABASE_TYPE == "postgres":
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.fetchval(
+                "SELECT add_credits($1, $2, $3)",
+                tg_user_id,
+                amount,
+                operation_type
+            )
+            logger.info(f"➕ Added {amount} credits ({operation_type}) to user {tg_user_id}, new balance: {result}")
+            return result
+    
+    else:
+        result = await run_blocking(
+            supabase.rpc("add_credits", {
+                "p_tg_user_id": tg_user_id, 
+                "p_amount": amount,
+                "p_operation_type": operation_type
+            }).execute
+        )
+        return result.data[0] if result.data else 0
 
 
 # ============ Phase 2: Retry & Error Handling ============

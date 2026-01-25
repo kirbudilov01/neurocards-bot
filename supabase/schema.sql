@@ -243,6 +243,108 @@ VALUES
 ON CONFLICT (name) DO NOTHING;
 
 -- ===================================
+-- FUNCTION: refund_credit
+-- ===================================
+CREATE OR REPLACE FUNCTION public.refund_credit(p_tg_user_id BIGINT)
+RETURNS INT AS $$
+DECLARE
+    v_new_credits INT;
+BEGIN
+    UPDATE public.users
+    SET credits = credits + 1, updated_at = NOW()
+    WHERE tg_user_id = p_tg_user_id
+    RETURNING credits INTO v_new_credits;
+    
+    -- Логируем в историю
+    INSERT INTO public.credits_history (tg_user_id, amount, operation_type, description)
+    SELECT p_tg_user_id, 1, 'refund', 'Job failed - credit refunded'
+    WHERE EXISTS (SELECT 1 FROM public.users WHERE tg_user_id = p_tg_user_id);
+    
+    RETURN COALESCE(v_new_credits, 0);
+END;
+$$ LANGUAGE plpgsql;
+
+-- ===================================
+-- FUNCTION: add_credits
+-- ===================================
+CREATE OR REPLACE FUNCTION public.add_credits(p_tg_user_id BIGINT, p_amount INT, p_operation_type TEXT DEFAULT 'bonus')
+RETURNS INT AS $$
+DECLARE
+    v_new_credits INT;
+BEGIN
+    IF p_amount <= 0 THEN
+        RAISE EXCEPTION 'Amount must be positive';
+    END IF;
+    
+    UPDATE public.users
+    SET credits = credits + p_amount, updated_at = NOW()
+    WHERE tg_user_id = p_tg_user_id
+    RETURNING credits INTO v_new_credits;
+    
+    -- Логируем в историю
+    INSERT INTO public.credits_history (tg_user_id, amount, operation_type, description)
+    SELECT p_tg_user_id, p_amount, p_operation_type, 'Credits added: ' || p_operation_type
+    WHERE EXISTS (SELECT 1 FROM public.users WHERE tg_user_id = p_tg_user_id);
+    
+    RETURN COALESCE(v_new_credits, 0);
+END;
+$$ LANGUAGE plpgsql;
+
+-- ===================================
+-- FUNCTION: complete_payment
+-- ===================================
+CREATE OR REPLACE FUNCTION public.complete_payment(
+    p_payment_id UUID,
+    p_tg_user_id BIGINT,
+    p_credits_amount INT
+)
+RETURNS JSON AS $$
+DECLARE
+    v_user_id UUID;
+    v_new_credits INT;
+    v_payment RECORD;
+BEGIN
+    -- 1) Получить информацию о платеже
+    SELECT * INTO v_payment FROM public.payments WHERE id = p_payment_id FOR UPDATE;
+    
+    IF v_payment IS NULL THEN
+        RETURN json_build_object('success', FALSE, 'error', 'Payment not found');
+    END IF;
+    
+    IF v_payment.status != 'pending' THEN
+        RETURN json_build_object('success', FALSE, 'error', 'Payment already processed');
+    END IF;
+    
+    -- 2) Получить пользователя
+    SELECT id INTO v_user_id FROM public.users WHERE tg_user_id = p_tg_user_id;
+    IF v_user_id IS NULL THEN
+        RETURN json_build_object('success', FALSE, 'error', 'User not found');
+    END IF;
+    
+    -- 3) Обновить платеж
+    UPDATE public.payments
+    SET status = 'completed', completed_at = NOW()
+    WHERE id = p_payment_id;
+    
+    -- 4) Добавить кредиты
+    UPDATE public.users
+    SET credits = credits + p_credits_amount, updated_at = NOW()
+    WHERE tg_user_id = p_tg_user_id
+    RETURNING credits INTO v_new_credits;
+    
+    -- 5) Логировать в историю
+    INSERT INTO public.credits_history (tg_user_id, amount, operation_type, description)
+    VALUES (p_tg_user_id, p_credits_amount, 'purchase', 'Payment completed: ' || p_payment_id);
+    
+    RETURN json_build_object(
+        'success', TRUE,
+        'new_credits', v_new_credits,
+        'payment_id', p_payment_id
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+-- ===================================
 -- RLS (Row Level Security) - DISABLED FOR NOW
 -- ===================================
 -- Can be enabled for multi-tenant security if needed
