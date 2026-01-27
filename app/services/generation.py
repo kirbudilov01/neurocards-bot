@@ -91,7 +91,7 @@ async def start_generation(
             "product_name": product_info.get("text", "")[:200],  # используем product_name
             "product_text": product_info.get("text", ""),
             "extra_wishes": extra_wishes,
-            "error_details": metadata,  # сохраняем метаданные здесь
+            "error_details": json.dumps(metadata),  # преобразуем dict в JSON string
             "status": "queued"
         })
         

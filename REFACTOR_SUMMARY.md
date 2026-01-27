@@ -12,7 +12,7 @@ docker-compose up -d --no-deps neurocards-polling neurocards-worker-1 neurocards
 # Verify
 docker ps | grep neurocards
 docker logs --tail 50 neurocards-bot
-docker logs --tail 50 neurocards-worker-1# ✅ Backend Refactor Complete
+docker logs --tail 50 neurocards-worker-1docker compose logs neurocards-polling --tail 150# ✅ Backend Refactor Complete
 
 ## 🎯 What Was Done
 
