@@ -48,6 +48,7 @@ services:
       dockerfile: Dockerfile.bot
     container_name: neurocards-polling
     command: ["python", "-m", "app.main_polling"]
+    env_file: .env
     environment:
       # Telegram
       BOT_TOKEN: ${BOT_TOKEN}
@@ -92,6 +93,7 @@ services:
       context: .
       dockerfile: Dockerfile.worker
     container_name: neurocards-worker-1
+    env_file: .env
     environment:
       # Telegram
       BOT_TOKEN: ${BOT_TOKEN}
@@ -126,6 +128,7 @@ services:
       context: .
       dockerfile: Dockerfile.worker
     container_name: neurocards-worker-2
+    env_file: .env
     environment:
       BOT_TOKEN: ${BOT_TOKEN}
       DATABASE_TYPE: postgres
@@ -151,6 +154,7 @@ services:
       context: .
       dockerfile: Dockerfile.worker
     container_name: neurocards-worker-3
+    env_file: .env
     environment:
       BOT_TOKEN: ${BOT_TOKEN}
       DATABASE_TYPE: postgres
