@@ -95,7 +95,16 @@ async def start_generation(
             "status": "queued"
         })
         
-        logger.info(f"✅ Job {job_id} created and added to PostgreSQL queue, waiting for worker")
+        # 6) Enqueue задание в RQ очередь для worker
+        import os
+        from redis import Redis
+        from rq import Queue
+        
+        redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+        redis_conn = Redis.from_url(redis_url)
+        queue = Queue('neurocards', connection=redis_conn)
+        queue.enqueue('worker.worker.process_job', job_id=str(job_id))
+        logger.info(f"✅ Job {job_id} created and enqueued to RQ, worker will pick it up")
         
     except Exception as e:
         # Логируем реальную ошибку с полным контекстом
