@@ -167,15 +167,23 @@ def build_script_for_job(job: dict) -> str:
     template_id = (job.get("template_id") or "ugc").strip()
     tpl = TEMPLATES.get(template_id) or TEMPLATES.get("ugc")
 
-    # product_info может быть строкой (JSON) или dict - фикс для PostgreSQL
-    # product_info может быть строкой (JSON) или dict - фикс для PostgreSQL
-    product_info = job.get("product_info") or {}
-    if isinstance(product_info, str):
+    # 🔍 DEBUG: Смотрим что есть в job
+    logger.info(f"🔍 DEBUG job fields: product_info={job.get('product_info')}, product_text={job.get('product_text')[:100] if job.get('product_text') else None}, prompt={job.get('prompt')[:100] if job.get('prompt') else None}")
+    
+    # ИСПРАВЛЕНИЕ: product_info НЕ существует в БД! Читаем из product_text (это JSON)
+    product_info_raw = job.get("product_text") or job.get("prompt") or "{}"
+    product_info = {}
+    
+    if isinstance(product_info_raw, str):
         import json
         try:
-            product_info = json.loads(product_info)
-        except:
-            product_info = {}
+            product_info = json.loads(product_info_raw)
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to parse product_text as JSON: {e}, using as plain text")
+            # Если не JSON - это просто текст, оборачиваем в dict
+            product_info = {"text": product_info_raw}
+    elif isinstance(product_info_raw, dict):
+        product_info = product_info_raw
     
     product_text = (product_info.get("text") or "").strip()
     
