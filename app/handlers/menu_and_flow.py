@@ -345,17 +345,8 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
             await state.clear()
             return
 
-        # Отправляем сразу уведомление о начале генерации
-        await cb.message.answer(
-            f"✅ <b>Принял!</b>\n\n"
-            f"🎬 Генерация <b>{video_count} {'видео' if video_count == 1 else 'видео'}</b> запущена!\n\n"
-            f"⏱ <b>Ожидайте</b> — это может занять от 1 до 30 минут в зависимости от загруженности Sora 2.\n\n"
-            f"Я пришлю результаты сюда по мере готовности.",
-            reply_markup=kb_back_to_menu(),
-            parse_mode=PARSE_MODE,
-        )
-
         # Запускаем генерацию для каждого видео
+        success_count = 0
         for i in range(video_count):
             # Уникальный idempotency_key для каждого видео
             idempotency_key = f"{cb.id}_{i}"
@@ -369,6 +360,19 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
                 product_info={"text": product_text, "user_prompt": user_prompt},
                 extra_wishes=extra_wishes,
                 template_id=template_id,
+            )
+            if job_id:
+                success_count += 1
+
+        # Подтверждаем запуск только если есть успешно созданные задачи
+        if success_count > 0:
+            await cb.message.answer(
+                f"✅ <b>Принял!</b>\n\n"
+                f"🎬 Генерация <b>{success_count} {'видео' if success_count == 1 else 'видео'}</b> запущена!\n\n"
+                f"⏱ <b>Ожидайте</b> — это может занять от 1 до 30 минут в зависимости от загруженности Sora 2.\n\n"
+                f"Я пришлю результаты сюда по мере готовности.",
+                reply_markup=kb_back_to_menu(),
+                parse_mode=PARSE_MODE,
             )
 
         await state.clear()
