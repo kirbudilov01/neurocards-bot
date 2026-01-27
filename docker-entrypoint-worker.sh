@@ -1,13 +1,7 @@
 #!/bin/sh
-# Entrypoint для RQ worker
+# Entrypoint для worker (database polling mode)
 
-# Значения по умолчанию
-REDIS_URL=${REDIS_URL:-redis://localhost:6379/0}
-WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-5}
-
-echo "🚀 Starting RQ worker..."
-echo "📡 Redis URL: $REDIS_URL"
-echo "⚡ Concurrency: $WORKER_CONCURRENCY"
+echo "🚀 Starting neurocards worker..."
 
 # Инициализация storage директорий
 STORAGE_BASE_PATH=${STORAGE_BASE_PATH:-/app/storage}
@@ -16,18 +10,6 @@ mkdir -p "$STORAGE_BASE_PATH/inputs" "$STORAGE_BASE_PATH/outputs" "$STORAGE_BASE
 chmod 755 "$STORAGE_BASE_PATH" "$STORAGE_BASE_PATH/inputs" "$STORAGE_BASE_PATH/outputs" "$STORAGE_BASE_PATH/temp" 2>/dev/null || true
 echo "✅ Storage initialized"
 
-# Генерируем уникальное имя воркера (PID + случайное число)
-WORKER_NAME="worker-$(hostname)-$$-${RANDOM}"
-
-# Настройки для длительных задач:
-# --worker-ttl 3600: worker живет до 1 часа без heartbeat (для долгой генерации)
-# --job-monitoring-interval 30: проверка heartbeat каждые 30 секунд
-# --disable-default-exception-handler: отключаем pubsub для стабильности
-# Timeout задачи 1800s (30 минут) передается через enqueue()
-exec python -m rq.cli worker neurocards \
-  --url "$REDIS_URL" \
-  --name "$WORKER_NAME" \
-  --worker-ttl 3600 \
-  --job-monitoring-interval 30 \
-  --disable-default-exception-handler \
-  --verbose
+# Worker uses database polling (fetch_next_queued_job), not RQ
+echo "📡 Starting worker with database polling mode..."
+exec python worker/worker.py
