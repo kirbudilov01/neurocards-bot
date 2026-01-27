@@ -393,7 +393,8 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
         else:
             logging.error(f"❌ No jobs created! All {error_count} attempts failed")
 
-        await state.clear()
+        # DON'T clear state here - keep product data for "Сделать ещё" button
+        # await state.clear()
     except Exception as e:
         logging.error(f"❌ Error in confirm_generation: {e}", exc_info=True)
         await cb.message.answer(

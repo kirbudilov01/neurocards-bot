@@ -319,7 +319,7 @@ async def main():
                         reply_markup=startup_markup,
                     )
 
-                # Доп. уведомление: фото прошло проверку / не прошло
+                # REMOVED: Дублирующее уведомление "Фото прошло проверку" - уже есть "Генерация запущена"
                 accepted_notified = False
                 try:
                     initial_info = await fetch_record_info_once(task_id, api_key)
@@ -329,11 +329,7 @@ async def main():
                     fail_code0 = data0.get("failCode") if isinstance(data0, dict) else ""
 
                     if status0 in {"waiting", "processing", "running", "queued", "pending", "doing"}:
-                        await bot.send_message(
-                            tg_user_id,
-                            "✅ Фото прошло проверку Sora 2, запускаю генерацию. Это может занять до 30 минут.",
-                            parse_mode="HTML",
-                        )
+                        # Already notified with "Генерация запущена" message above
                         accepted_notified = True
                     elif status0 in {"failed", "fail", "error", "canceled", "cancelled"}:
                         logger.warning(f"❌ Initial KIE status fail: code={fail_code0}, msg={fail_msg0}")

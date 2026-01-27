@@ -134,10 +134,11 @@ def poll_record_info(task_id: str, api_key: str, timeout_sec: int = 300, interva
     deadline = time.time() + timeout_sec
     poll_count = 0
 
-    with httpx.Client(timeout=60.0) as c:
+    # Увеличиваем HTTP timeout до 120s для медленных ответов KIE
+    with httpx.Client(timeout=120.0) as c:
         last = None
         consecutive_errors = 0
-        max_consecutive_errors = 3  # Если 3 ошибки подряд — сдаёмся
+        max_consecutive_errors = 5  # Увеличиваем до 5 попыток (включая timeout errors)
         
         while time.time() < deadline:
             poll_count += 1
@@ -165,6 +166,26 @@ def poll_record_info(task_id: str, api_key: str, timeout_sec: int = 300, interva
                 else:
                     # Только reset counter если статус НЕ fail (т.е. успех или waiting)
                     consecutive_errors = 0
+                
+            except httpx.TimeoutException as e:
+                # HTTP request timeout (120s) - KIE не отвечает, но продолжаем polling
+                consecutive_errors += 1
+                logger.warning(f"⏱️ Poll #{poll_count}: HTTP timeout (consecutive: {consecutive_errors}/{max_consecutive_errors}), retrying...")
+                
+                if consecutive_errors >= max_consecutive_errors:
+                    logger.error(f"❌ Too many consecutive timeouts ({max_consecutive_errors}), giving up")
+                    info = {
+                        "error": "http_timeout",
+                        "taskId": task_id,
+                        "poll_attempt": poll_count,
+                        "message": "HTTP Client says - Request timeout error"
+                    }
+                    err = RuntimeError("HTTP Client says - Request timeout error")
+                    err.kie_info = info
+                    raise err
+                
+                time.sleep(15)  # Wait before retry
+                continue
                 
             except httpx.HTTPStatusError as e:
                 consecutive_errors += 1

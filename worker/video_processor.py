@@ -205,9 +205,9 @@ async def process_video_generation(job_data: dict) -> dict:
                 # Сохраняем task_id в БД
                 await update_job(job_id, {"kie_task_id": kie_task_id})
                 
-                # 5. Ждем результата (Sora-2 может генерировать до 10 минут)
-                logger.info(f"⏳ Waiting for KIE.AI to generate video (timeout: 600s, poll interval: 10s)...")
-                info = poll_record_info(kie_task_id, api_key_used, timeout_sec=600, interval_sec=10)
+                # 5. Ждем результата (Sora-2 может генерировать до 15 минут)
+                logger.info(f"⏳ Waiting for KIE.AI to generate video (timeout: 900s, poll interval: 10s)...")
+                info = poll_record_info(kie_task_id, api_key_used, timeout_sec=900, interval_sec=10)
                 
                 logger.info(f"📊 KIE response received: {info}")
                 
@@ -232,7 +232,7 @@ async def process_video_generation(job_data: dict) -> dict:
                 
                 # Если timeout произошел
                 if info.get("error") == "timeout":
-                    error_detail = f"KIE.AI generation timeout after 600s"
+                    error_detail = f"KIE.AI generation timeout after 900s"
                     logger.error(f"⏲️  {error_detail}")
                     error = RuntimeError(error_detail)
                     error.kie_info = info
