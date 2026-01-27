@@ -57,12 +57,21 @@ async def start_generation(
         
         # 5) Обновляем job с дополнительными полями для worker
         logger.info(f"📝 Updating job {job_id} with queue status...")
+        
+        # Строим JSON для error_details с метаданными
+        import json
+        metadata = {
+            "template_id": template_id,
+            "kind": kind,
+            "user_prompt": product_info.get("user_prompt", "")
+        }
+        
         await update_job(str(job_id), {
             "product_image_url": input_path,
-            "product_info": product_info,  # dict для PostgreSQL JSONB
-            "template_id": template_id,
+            "product_name": product_info.get("text", "")[:200],  # используем product_name
+            "product_text": product_info.get("text", ""),
             "extra_wishes": extra_wishes,
-            "kind": kind,
+            "error_details": metadata,  # сохраняем метаданные здесь
             "status": "queued"
         })
         
