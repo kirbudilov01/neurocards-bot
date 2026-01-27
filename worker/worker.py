@@ -136,8 +136,9 @@ async def download_bytes(url: str) -> bytes:
     import time
     start_time = time.time()
     
-    # timeout 90 секунд обычно достаточно для видео ~50MB из CDN
-    async with httpx.AsyncClient(timeout=90.0, follow_redirects=True) as c:
+    # Увеличиваем timeout до 180 сек (3 минуты) для больших видео
+    # Видео могут быть 50-100+ МБ и скачиваться долго
+    async with httpx.AsyncClient(timeout=180.0, follow_redirects=True) as c:
         r = await c.get(url)
         r.raise_for_status()
         
@@ -462,9 +463,32 @@ async def main():
                 rotator = get_rotator()
                 rotator.report_success(api_key)
                 
+                # Скачиваем видео с retry для timeout ошибок
                 logger.info(f"📥 Downloading video from {video_url}...")
-                data = await download_bytes(video_url)
-                logger.info(f"✅ Downloaded {len(data)} bytes")
+                download_attempts = 0
+                max_download_attempts = 3
+                data = None
+                
+                while download_attempts < max_download_attempts:
+                    download_attempts += 1
+                    try:
+                        data = await download_bytes(video_url)
+                        logger.info(f"✅ Downloaded {len(data)} bytes")
+                        break
+                    except httpx.TimeoutException as e:
+                        logger.warning(f"⏱️ Download timeout (attempt {download_attempts}/{max_download_attempts}): {e}")
+                        if download_attempts >= max_download_attempts:
+                            logger.error(f"❌ Video download failed after {max_download_attempts} attempts")
+                            raise
+                        wait_time = 10 * download_attempts
+                        logger.info(f"⏳ Retrying in {wait_time}s...")
+                        await asyncio.sleep(wait_time)
+                    except Exception as e:
+                        logger.error(f"❌ Download error: {e}")
+                        raise
+                
+                if not data:
+                    raise RuntimeError("Failed to download video after retries")
 
                 max_bytes = 45 * 1024 * 1024
                 if len(data) > max_bytes:
