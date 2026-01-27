@@ -29,14 +29,36 @@ from app.db_adapter import init_db_pool, close_db_pool
 
 
 async def start_health_server(port: int):
-    """Запускает простой HTTP сервер для healthcheck."""
+    """Запускает HTTP сервер для healthcheck и отдачи storage файлов."""
     try:
         async def handle_healthz(request):
             return web.Response(text="ok")
 
+        async def handle_storage(request: web.Request):
+            # Serve files from STORAGE_BASE_PATH under /storage/{bucket}/{filename}
+            bucket = request.match_info.get("bucket", "")
+            filename = request.match_info.get("filename", "")
+            base_path = os.getenv("STORAGE_BASE_PATH", "/app/storage")
+            # Allow only inputs/outputs buckets
+            if bucket not in {"inputs", "outputs"}:
+                return web.Response(status=404, text="Not found")
+            import mimetypes
+            from pathlib import Path
+            file_path = Path(base_path) / bucket / filename
+            if not file_path.exists() or not file_path.is_file():
+                return web.Response(status=404, text="Not found")
+            ctype, _ = mimetypes.guess_type(str(file_path))
+            ctype = ctype or "application/octet-stream"
+            try:
+                return web.FileResponse(path=str(file_path), headers={"Content-Type": ctype})
+            except Exception as e:
+                logger.error(f"❌ Failed to serve file {file_path}: {e}")
+                return web.Response(status=500, text="Internal server error")
+
         app = web.Application()
         app.router.add_get("/", handle_healthz)
         app.router.add_get("/healthz", handle_healthz)
+        app.router.add_get("/storage/{bucket}/{filename}", handle_storage)
 
         runner = web.AppRunner(app)
         await runner.setup()
