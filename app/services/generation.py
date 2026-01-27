@@ -43,6 +43,7 @@ async def start_generation(
     prompt_input_str = ensure_json_string(product_info)
     
     try:
+        logger.info(f"📝 Calling RPC: create_job_and_consume_credit for user {tg_user_id}, key={idempotency_key[:20]}...")
         result = await create_job_and_consume_credit(
             tg_user_id=tg_user_id,
             template_type=kind,
@@ -50,10 +51,12 @@ async def start_generation(
             photo_path=input_path,
             prompt_input=prompt_input_str,
         )
+        logger.info(f"✅ RPC returned: {result}")
         job_id = result["job_id"]
         new_credits = result["new_credits"]
         
         # 5) Обновляем job с дополнительными полями для worker
+        logger.info(f"📝 Updating job {job_id} with queue status...")
         await update_job(str(job_id), {
             "product_image_url": input_path,
             "product_info": product_info,  # dict для PostgreSQL JSONB
@@ -66,13 +69,21 @@ async def start_generation(
         logger.info(f"✅ Job {job_id} created and added to PostgreSQL queue")
         
     except Exception as e:
-        # Логируем реальную ошибку
-        logger.error(f"❌ Failed to create job: {e}", exc_info=True)
+        # Логируем реальную ошибку с полным контекстом
+        error_str = str(e)
+        logger.error(f"❌ Failed to create job for user {tg_user_id}: {error_str}", exc_info=True)
         
-        # если RPC упал (например, 'Not enough credits'), сообщим об этом
+        # Определяем тип ошибки и отправляем специфичное сообщение
+        if "insufficient" in error_str.lower() or "credits" in error_str.lower():
+            error_msg = "❌ <b>Недостаточно кредитов.</b>\n\nПополните баланс и попробуйте снова."
+        elif "duplicate" in error_str.lower():
+            error_msg = "⚠️ <b>Это задание уже обрабатывается.</b>\n\nПопробуйте создать новое."
+        else:
+            error_msg = f"⚠️ <b>Ошибка создания задания:</b>\n{error_str[:100]}"
+        
         await bot.send_message(
             tg_user_id,
-            getattr(texts, "ERROR_GENERATION", "⚠️ Ошибка, попробуй ещё раз"),
+            error_msg,
             reply_markup=kb_no_credits(),
             parse_mode="HTML",
         )
