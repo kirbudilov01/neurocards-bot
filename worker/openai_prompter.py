@@ -63,6 +63,13 @@ def build_prompt_with_gpt(system: str, instructions: str, product_text: str, ext
         f"ДОП ПОЖЕЛАНИЯ:\n{wishes}\n\n"
         "Верни ТОЛЬКО финальный prompt (без пояснений)."
     )
+    
+    # 🔍 ЛОГИРУЕМ ЧТО ОТПРАВЛЯЕМ В GPT
+    logger.info(f"🔍 DEBUG OpenAI Request:")
+    logger.info(f"  System: {system[:100]}...")
+    logger.info(f"  Product Text: {product_text[:100]}...")
+    logger.info(f"  Extra Wishes: {wishes[:100]}...")
+    logger.debug(f"  Full user message: {user_msg}")
 
     payload = {
         "model": "gpt-4o-mini",

@@ -178,6 +178,10 @@ def build_script_for_job(job: dict) -> str:
             product_info = {}
     
     product_text = (product_info.get("text") or "").strip()
+    
+    # 🔍 ЛОГИРУЕМ ЧТО ПРИШЛО ПОЛЬЗОВАТЕЛЕМ
+    logger.info(f"🔍 Product info from user: text='{product_text[:100]}...'")
+    logger.info(f"🔍 Template selected: {template_id}")
     extra_wishes = job.get("extra_wishes")
 
     # 🧑‍💻 Сам себе продюсер — GPT НЕ нужен
