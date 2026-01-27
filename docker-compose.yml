@@ -64,7 +64,9 @@ services:
       # Storage
       STORAGE_TYPE: ${STORAGE_TYPE:-local}
       STORAGE_BASE_PATH: ${STORAGE_BASE_PATH:-/app/storage}
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      # Public URL and port for webhook HTTP server
+      PORT: ${PORT:-8080}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://185.93.108.162:8080}
     volumes:
       - storage_data:/app/storage
     ports:
