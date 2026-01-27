@@ -136,9 +136,9 @@ async def download_bytes(url: str) -> bytes:
     import time
     start_time = time.time()
     
-    # Увеличиваем timeout до 180 сек (3 минуты) для больших видео
+    # Увеличиваем timeout до 300 сек (5 минут) для больших видео
     # Видео могут быть 50-100+ МБ и скачиваться долго
-    async with httpx.AsyncClient(timeout=180.0, follow_redirects=True) as c:
+    async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as c:
         r = await c.get(url)
         r.raise_for_status()
         
@@ -478,7 +478,7 @@ async def main():
                 # Скачиваем видео с retry для timeout ошибок
                 logger.info(f"📥 Downloading video from {video_url}...")
                 download_attempts = 0
-                max_download_attempts = 3
+                max_download_attempts = 5
                 data = None
                 
                 while download_attempts < max_download_attempts:
