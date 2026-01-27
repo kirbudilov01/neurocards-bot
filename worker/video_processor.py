@@ -126,12 +126,22 @@ def build_prompt(product_info: dict, template_id: str, extra_wishes: str | None)
         
         # ВСЕГДА используем fallback на временные ошибки (429/500/502/503)
         if status in {429, 500, 502, 503}:
-            fallback_prompt = f"A commercial video showing: {product_text}"
+            fallback_prompt = (
+                f"Create a short, engaging UGC-style product demo video for {product_text}. "
+                f"Show the product naturally in use or being held. Highlight why it's useful. "
+                f"Include a real person interacting with the product. Use natural lighting. "
+                f"No text overlays or graphics. Duration: 14 seconds."
+            )
             logger.info(f"⚡ Using fallback prompt due to OpenAI {status}: {fallback_prompt[:150]}...")
             return fallback_prompt
         
         # Для других ошибок тоже используем fallback (не убиваем job на GPT fail)
-        fallback_prompt = f"A commercial video showing: {product_text}"
+        fallback_prompt = (
+            f"Create a short, engaging UGC-style product demo video for {product_text}. "
+            f"Show the product naturally in use or being held. Highlight why it's useful. "
+            f"Include a real person interacting with the product. Use natural lighting. "
+            f"No text overlays or graphics. Duration: 14 seconds."
+        )
         logger.info(f"⚡ Using fallback prompt (error: {type(e).__name__}): {fallback_prompt[:150]}...")
         return fallback_prompt
 
