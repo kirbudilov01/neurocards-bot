@@ -5,11 +5,13 @@ Telegram bot в режиме polling (без webhook).
 import asyncio
 import logging
 import sys
+import os
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiohttp_socks import ProxyConnector
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiohttp import web
 
 # Настройка логирования
 logging.basicConfig(
@@ -24,6 +26,22 @@ from app.config import load_proxies_from_file, PROXY_FILE, PROXY_COOLDOWN
 from app.proxy_rotator import init_proxy_rotator, get_proxy_rotator
 from app.handlers import start, menu_and_flow, fallback
 from app.db_adapter import init_db_pool, close_db_pool
+
+
+async def start_health_server(port: int):
+    """Запускает простой HTTP сервер для healthcheck."""
+    async def handle_healthz(request):
+        return web.Response(text="ok")
+
+    app = web.Application()
+    app.router.add_get("/", handle_healthz)
+    app.router.add_get("/healthz", handle_healthz)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host="0.0.0.0", port=port)
+    await site.start()
+    logger.info(f"🩺 Health server started on port {port}")
 
 
 def create_bot_with_proxy() -> Bot:
@@ -88,6 +106,10 @@ async def main():
         session=session
     )
     logger.info("✅ Bot initialized WITHOUT proxy (request_timeout=180s)")
+
+    # Запускаем легковесный HTTP health сервер, чтобы healthcheck в Docker работал
+    port = int(os.getenv("PORT", "8080"))
+    asyncio.create_task(start_health_server(port))
     
     dp = Dispatcher(storage=MemoryStorage())
 

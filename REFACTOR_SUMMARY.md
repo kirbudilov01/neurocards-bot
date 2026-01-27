@@ -1,4 +1,18 @@
-# ✅ Backend Refactor Complete
+# Start bot/workers without touching redis/postgres
+cd /root/neurocards-bot
+docker-compose up -d --no-deps neurocards-polling neurocards-worker-1 neurocards-worker-2 neurocards-worker-3
+
+# Verify
+docker ps | grep neurocards
+docker logs --tail 50 neurocards-bot
+docker logs --tail 50 neurocards-worker-1# Start bot/workers without touching redis/postgres
+cd /root/neurocards-bot
+docker-compose up -d --no-deps neurocards-polling neurocards-worker-1 neurocards-worker-2 neurocards-worker-3
+
+# Verify
+docker ps | grep neurocards
+docker logs --tail 50 neurocards-bot
+docker logs --tail 50 neurocards-worker-1# ✅ Backend Refactor Complete
 
 ## 🎯 What Was Done
 

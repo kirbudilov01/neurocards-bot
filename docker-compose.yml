@@ -1,4 +1,4 @@
-version: '3.8'
+# Compose v2 ignores the version field; removing to avoid warnings
 
 services:
   # PostgreSQL Database
@@ -83,6 +83,7 @@ services:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/healthz || exit 1"]
       interval: 30s
       timeout: 10s
+      start_period: 30s
       retries: 3
 
   # Workers (Background Job Processors)
