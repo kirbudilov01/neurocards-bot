@@ -254,8 +254,12 @@ async def main():
     
     # Проверяем наличие критичных переменных
     try:
-        bot = Bot(BOT_TOKEN)
-        logger.info("✅ Bot initialized successfully")
+        # Создаем Bot с увеличенным timeout для отправки больших видео
+        import aiohttp
+        timeout = aiohttp.ClientTimeout(total=600)  # 10 минут для отправки видео
+        session = aiohttp.ClientSession(timeout=timeout)
+        bot = Bot(BOT_TOKEN, session=session)
+        logger.info("✅ Bot initialized successfully with 600s timeout")
     except Exception as e:
         logger.critical(f"❌ Failed to initialize bot: {e}")
         await close_db_pool()
@@ -602,7 +606,10 @@ async def main():
 
             await asyncio.sleep(1)
     finally:
-        # Закрываем database pool при выходе
+        # Закрываем database pool и bot session при выходе
+        if 'session' in locals() and session:
+            await session.close()
+            logger.info("✅ Bot session closed")
         await close_db_pool()
         logger.info("✅ Database pool closed")
     
