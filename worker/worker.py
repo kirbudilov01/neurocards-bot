@@ -255,9 +255,13 @@ async def main():
     # Проверяем наличие критичных переменных
     try:
         # Создаем Bot с увеличенным timeout для отправки больших видео
+        # aiogram использует свою собственную сессию, указываем timeout через default
+        from aiogram.client.default import DefaultBotProperties
+        from aiogram.client.session.aiohttp import AiohttpSession
         import aiohttp
+        
         timeout = aiohttp.ClientTimeout(total=600)  # 10 минут для отправки видео
-        session = aiohttp.ClientSession(timeout=timeout)
+        session = AiohttpSession(timeout=timeout)
         bot = Bot(BOT_TOKEN, session=session)
         logger.info("✅ Bot initialized successfully with 600s timeout")
     except Exception as e:
