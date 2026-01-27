@@ -23,7 +23,7 @@ from app.db_adapter import (
 )
 MAX_RETRY_ATTEMPTS = 3  # Максимум попыток для TEMPORARY errors
 from app.services.storage_factory import get_storage
-from worker.kie_client import create_task_sora_i2v, poll_record_info
+from worker.kie_client import create_task_sora_i2v, poll_record_info, KIE_RECORD_INFO_URL
 from worker.kie_error_classifier import classify_kie_error, should_retry, get_retry_delay, get_user_error_message, KieErrorType
 from worker.kie_key_rotator import get_rotator
 from worker.openai_prompter import build_prompt_with_gpt
@@ -132,10 +132,29 @@ def find_video_url(obj):
 
 
 async def download_bytes(url: str) -> bytes:
-    async with httpx.AsyncClient(timeout=180.0, follow_redirects=True) as c:
+    """Скачивает видео с KIE по URL (не сохраняет на диск)"""
+    import time
+    start_time = time.time()
+    
+    # timeout 90 секунд обычно достаточно для видео ~50MB из CDN
+    async with httpx.AsyncClient(timeout=90.0, follow_redirects=True) as c:
         r = await c.get(url)
         r.raise_for_status()
+        
+        elapsed = time.time() - start_time
+        size_mb = len(r.content) / 1024 / 1024
+        speed_mbps = (size_mb / elapsed) if elapsed > 0 else 0
+        
+        logger.info(f"✅ Downloaded video: {size_mb:.2f} MB in {elapsed:.1f}s ({speed_mbps:.2f} MB/s)")
         return r.content
+
+
+async def fetch_record_info_once(task_id: str, api_key: str) -> dict:
+    """Делает один запрос recordInfo (без долгого poll)."""
+    async with httpx.AsyncClient(timeout=60.0) as c:
+        r = await c.get(f"{KIE_RECORD_INFO_URL}?taskId={task_id}", headers={"Authorization": f"Bearer {api_key}"})
+        r.raise_for_status()
+        return r.json()
 
 
 def build_script_for_job(job: dict) -> str:
@@ -168,6 +187,7 @@ def build_script_for_job(job: dict) -> str:
         return user_prompt
 
     # GPT → сценарий/промпт
+    logger.info(f"📊 Attempting GPT script generation: product='{product_text[:50]}...', template={template_id}")
     try:
         script = build_prompt_with_gpt(
             system=tpl["system"],
@@ -175,17 +195,30 @@ def build_script_for_job(job: dict) -> str:
             product_text=product_text,
             extra_wishes=extra_wishes,
         )
-        logger.info(f"✅ Script built successfully: {script[:100]}...")
+        logger.info(f"✅ Script built successfully via GPT: {len(script)} chars")
+        logger.debug(f"Generated script: {script[:150]}...")
         return script
     except Exception as e:
-        logger.error(f"❌ Failed to build script via GPT: {repr(e)}", exc_info=True)
+        logger.error(f"❌ GPT failed (maybe out of tokens?): {repr(e)}", exc_info=True)
         
-        # 🔄 FALLBACK: Используем базовый шаблон без GPT
-        logger.warning("⚠️ Falling back to template without GPT...")
-        fallback_prompt = tpl["instructions"].replace("{product_text}", product_text or "product")
-        if extra_wishes:
-            fallback_prompt += f" {extra_wishes}"
-        logger.info(f"✅ Fallback prompt: {fallback_prompt[:100]}...")
+        # 🔄 FALLBACK: Генерируем базовый хороший промт БЕЗ GPT
+        # Важно: это должен быть РЕАЛЬНЫЙ ПРОМТ ДЛЯ SORA, не инструкция для GPT!
+        logger.warning(f"⚠️ FALLBACK ACTIVATED: Using simplified prompt instead of GPT")
+        logger.warning(f"⚠️ Reason: OpenAI API error ({type(e).__name__}). Check OpenAI credits!")
+        
+        product_text = product_text or "product"
+        extra_wishes_text = f" {extra_wishes}" if extra_wishes else ""
+        
+        # Простой но эффективный промт для Sora
+        fallback_prompt = (
+            f"Create a short, engaging product demo video for {product_text}. "
+            f"Show the product in action, highlight its features and benefits. "
+            f"Use realistic settings and natural lighting. "
+            f"Include a person using or interacting with the product. "
+            f"Keep it professional and conversational. "
+            f"Duration: 14 seconds.{extra_wishes_text}"
+        )
+        logger.warning(f"✅ Using fallback prompt ({len(fallback_prompt)} chars): {fallback_prompt[:80]}...")
         return fallback_prompt
 
 
@@ -230,6 +263,7 @@ async def main():
 
                 # Сбрасываем счетчик ошибок при успешном получении задачи
                 consecutive_errors = 0
+                credit_refunded = False  # Флаг для предотвращения двойного возврата кредитов
                 
                 job_id = job["id"]
                 logger.info(f"💼 Processing job {job_id}")
@@ -267,13 +301,66 @@ async def main():
 
                 # Отправляем уведомление только при первой попытке
                 if attempts == 1:
+                    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                    
+                    # Кнопки для параллельного заказа ещё видео
+                    startup_markup = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="🔄 Сделать ещё с этим товаром", callback_data="make_another_same_product")],
+                        [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")]
+                    ])
+                    
                     await bot.send_message(
                         tg_user_id,
-                        "🎬 <b>Генерация запущена!</b>\n\n"
+                        "✅ Принял!\n\n"
+                        "🎬 <b>Генерация запущена</b>\n\n"
                         "⏱ Обработка занимает от <b>1 до 30 минут</b> в зависимости от загруженности Sora 2.\n\n"
-                        "Ожидайте, я пришлю результат сюда.",
+                        "Я отправлю видео сюда, как только оно будет готово. "
+                        "Спасибо за терпение! 😊\n\n"
+                        "<i>💡 Можешь заказать ещё видео с этим товаром пока обрабатывается это!</i>",
                         parse_mode="HTML",
+                        reply_markup=startup_markup,
                     )
+
+                # Доп. уведомление: фото прошло проверку / не прошло
+                accepted_notified = False
+                try:
+                    initial_info = await fetch_record_info_once(task_id, api_key)
+                    data0 = initial_info.get("data") if isinstance(initial_info, dict) else {}
+                    status0 = (data0.get("state") or data0.get("status") or "").lower()
+                    fail_msg0 = data0.get("failMsg") if isinstance(data0, dict) else ""
+                    fail_code0 = data0.get("failCode") if isinstance(data0, dict) else ""
+
+                    if status0 in {"waiting", "processing", "running", "queued", "pending", "doing"}:
+                        await bot.send_message(
+                            tg_user_id,
+                            "✅ Фото прошло проверку Sora 2, запускаю генерацию. Это может занять до 30 минут.",
+                            parse_mode="HTML",
+                        )
+                        accepted_notified = True
+                    elif status0 in {"failed", "fail", "error", "canceled", "cancelled"}:
+                        logger.warning(f"❌ Initial KIE status fail: code={fail_code0}, msg={fail_msg0}")
+                        error_type, error_msg = classify_kie_error(initial_info)
+                        await refund_credit(tg_user_id)
+                        credit_refunded = True
+                        await update_job(job_id, {"status": "failed", "error": error_msg, "finished_at": "NOW()"})
+                        user_msg = (
+                            "⚠️ <b>Фото не прошло проверку Sora 2</b>\n\n"
+                            "💡 Требования к фото:\n"
+                            "• Без людей и лиц\n"
+                            "• Один товар, чётко и без водяных знаков\n"
+                            "• JPG/PNG до 5 МБ, вертикально или квадрат\n\n"
+                            "💰 1 кредит вернул на баланс ✅"
+                        )
+                        await bot.send_message(
+                            tg_user_id,
+                            user_msg,
+                            parse_mode="HTML",
+                            reply_markup=kb_result(kind),
+                        )
+                        await asyncio.sleep(1)
+                        continue
+                except Exception as e:
+                    logger.warning(f"⚠️ Initial recordInfo check failed: {e}")
                 
                 logger.info(f"⏳ Polling KIE for task {task_id}...")
                 # Увеличим таймаут до 6 минут (360 сек) для большей надежности
@@ -332,6 +419,7 @@ async def main():
                     
                     # Финальный fail - возвращаем кредит и уведомляем
                     await refund_credit(tg_user_id)
+                    credit_refunded = True
                     await update_job(job_id, {"status": "failed", "error": error_msg, "finished_at": "NOW()"})
                     
                     await bot.send_message(
@@ -347,6 +435,7 @@ async def main():
                 if not video_url:
                     logger.warning("❌ Video URL not found in KIE response")
                     await refund_credit(tg_user_id)
+                    credit_refunded = True
                     await update_job(job_id, {"status": "failed", "error": "no_video_url", "finished_at": "NOW()"})
                     await bot.send_message(
                         tg_user_id,
@@ -384,15 +473,26 @@ async def main():
                         [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")]
                     ])
                     
-                    await bot.send_video(
+                    # Отправляем видео и сохраняем file_id для быстрых повторных отправок
+                    video_msg = await bot.send_video(
                         tg_user_id,
                         video=BufferedInputFile(data, filename="reels.mp4"),
                         caption="✅ <b>Видео готово!</b>",
                         parse_mode="HTML",
                         reply_markup=retry_markup,
                     )
-                    await update_job(job_id, {"status": "completed", "finished_at": "NOW()", "video_url": video_url})
+                    
+                    # Сохраняем file_id для быстрых повторных отправок (без скачивания)
+                    video_file_id = video_msg.video.file_id if video_msg.video else ""
+                    await update_job(job_id, {
+                        "status": "completed",
+                        "finished_at": "NOW()",
+                        "video_url": video_url,
+                        "video_file_id": video_file_id  # сохраняем для повторной отправки
+                    })
                     logger.info(f"✅ Job {job_id} completed successfully")
+                    if video_file_id:
+                        logger.info(f"💾 Saved file_id for fast resend: {video_file_id[:30]}...")
 
             except Exception as e:
                 consecutive_errors += 1
@@ -403,8 +503,9 @@ async def main():
                     break
                 
                 try:
-                    if 'tg_user_id' in locals():
+                    if 'tg_user_id' in locals() and not credit_refunded:
                         await refund_credit(tg_user_id)
+                        credit_refunded = True
                 except Exception:
                     pass
                 

@@ -35,16 +35,23 @@ async def start_health_server(port: int):
             return web.Response(text="ok")
 
         async def handle_storage(request: web.Request):
-            # Serve files from STORAGE_BASE_PATH under /storage/{bucket}/{filename}
+            # Serve files from STORAGE_BASE_PATH under /storage/{bucket}/{tail}
             bucket = request.match_info.get("bucket", "")
-            filename = request.match_info.get("filename", "")
+            tail = request.match_info.get("tail", "")
             base_path = os.getenv("STORAGE_BASE_PATH", "/app/storage")
-            # Allow only inputs/outputs buckets
             if bucket not in {"inputs", "outputs"}:
                 return web.Response(status=404, text="Not found")
             import mimetypes
             from pathlib import Path
-            file_path = Path(base_path) / bucket / filename
+            base_bucket_path = Path(base_path) / bucket
+            try:
+                file_path = (base_bucket_path / tail).resolve()
+                if base_bucket_path.resolve() not in file_path.parents and file_path != base_bucket_path.resolve():
+                    logger.warning(f"🚫 Path traversal attempt: {file_path}")
+                    return web.Response(status=404, text="Not found")
+            except Exception as e:
+                logger.error(f"❌ Invalid storage path: {e}")
+                return web.Response(status=404, text="Not found")
             if not file_path.exists() or not file_path.is_file():
                 return web.Response(status=404, text="Not found")
             ctype, _ = mimetypes.guess_type(str(file_path))
@@ -58,7 +65,8 @@ async def start_health_server(port: int):
         app = web.Application()
         app.router.add_get("/", handle_healthz)
         app.router.add_get("/healthz", handle_healthz)
-        app.router.add_get("/storage/{bucket}/{filename}", handle_storage)
+        # Support nested paths under bucket (e.g., inputs/5235703016/uuid.jpg)
+        app.router.add_get("/storage/{bucket}/{tail:.*}", handle_storage)
 
         runner = web.AppRunner(app)
         await runner.setup()

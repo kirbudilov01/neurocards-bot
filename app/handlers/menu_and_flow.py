@@ -398,12 +398,12 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
             parse_mode=PARSE_MODE,
         )
 
-# Handler для "Сделать ещё с этим товаром"
+# Handler для "Сделать ещё с этим товаром" (из готового видео - нужен job_id в callback)
 @router.callback_query(F.data.startswith("retry:"))
 async def retry_same_product(cb: CallbackQuery, state: FSMContext):
     await cb.answer()
     
-    # Получаем job_id из предыдущей генерации
+    # Получаем job_id из callback data: retry:<job_id>
     job_id = cb.data.split(":", 1)[1]
     
     # Загружаем данные job из БД
@@ -411,7 +411,7 @@ async def retry_same_product(cb: CallbackQuery, state: FSMContext):
     pool = await get_pool()
     async with pool.acquire() as conn:
         job = await conn.fetchrow(
-            "SELECT input_photo_path, product_info FROM jobs WHERE id::text = $1",
+            "SELECT product_image_url, product_text, template_type, kind FROM jobs WHERE id::text = $1",
             job_id
         )
     
@@ -424,19 +424,48 @@ async def retry_same_product(cb: CallbackQuery, state: FSMContext):
         return
     
     # Восстанавливаем данные в state
-    product_info = ensure_dict(job["product_info"])
-    
+    await state.clear()
     await state.update_data(
-        photo_file_id=job["input_photo_path"],
-        product_text=product_info.get("text", ""),
+        kind=job["kind"],
+        photo_file_id=job["product_image_url"],
+        product_text=job["product_text"],
+        template_id=job["template_type"],
     )
     
-    # Переходим к выбору шаблона
+    # Переходим сразу к выбору количества видео (уже есть photo, product_text, template)
     await cb.message.answer(
         "🎬 <b>Отлично! Делаем ещё видео с этим товаром.</b>\n\n"
-        "Выбери формат:",
-        reply_markup=kb_template_type(),
+        "Сколько видео сгенерировать?",
+        reply_markup=kb_video_count(),
         parse_mode=PARSE_MODE,
     )
-    await state.set_state(GenFlow.waiting_template_type)
+    await state.set_state(GenFlow.waiting_video_count)
+
+
+# Handler для "Сделать еще с этим товаром" (когда нет job_id в callback)
+@router.callback_query(F.data == "make_another_same_product")
+async def make_another_same_product(cb: CallbackQuery, state: FSMContext):
+    """Повторная генерация с теми же данными (но сохраненные в state)"""
+    await cb.answer()
+    
+    # Получаем данные из текущего state
+    data = await state.get_data()
+    
+    if not data.get("product_text") or not data.get("photo_file_id"):
+        await cb.message.answer(
+            "⚠️ Данные товара не найдены. Пожалуйста, начните с начала.",
+            reply_markup=kb_back_to_menu(),
+            parse_mode=PARSE_MODE,
+        )
+        await state.clear()
+        return
+    
+    # Переходим к выбору количества видео
+    await cb.message.answer(
+        "🎬 <b>Отлично! Делаем ещё видео с этим товаром.</b>\n\n"
+        "Сколько видео сгенерировать?",
+        reply_markup=kb_video_count(),
+        parse_mode=PARSE_MODE,
+    )
+    await state.set_state(GenFlow.waiting_video_count)
 

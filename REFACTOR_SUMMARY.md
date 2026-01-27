@@ -182,6 +182,56 @@ Before deploying to server:
 
 ---
 
+## 🐛 January 27, 2026: Critical Bug Fixes & Feature Completion
+
+### 1. **Fixed Storage File Serving (KIE Image Fetch)**
+- **Problem**: KIE was getting 404 when fetching product images for nested paths
+- **Root Cause**: Route pattern `/storage/{bucket}/{filename}` only captured single segment
+- **Fix**: Changed to `/storage/{bucket}/{tail:.*}` for greedy path matching
+  - Now supports nested paths like `inputs/5235703016/uuid.jpg`
+  - curl returns 200 with `Content-Type: image/jpeg`
+- **File**: [app/main_polling.py](app/main_polling.py)
+
+### 2. **Fixed Double Credit Refunds**
+- **Problem**: Users reported credits growing unexpectedly (5→9 instead of 5→4)
+- **Root Cause**: Multiple `refund_credit()` calls in same job without tracking
+  - If video_url not found OR exception occurs → second refund in catch block
+  - No flag to prevent double-refund
+- **Fix**: Added `credit_refunded` flag to track refund state
+  - Only refund if not already refunded (prevents duplicates)
+  - Exception handler checks flag before calling `refund_credit()`
+- **Files**: [worker/worker.py](worker/worker.py)
+
+### 3. **Implemented "Generate More with Same Product" Feature**
+- **Problem**: Two parallel implementations with duplicate code
+  - `retry:` callback for historical jobs (in worker)
+  - `make_another_same_product` callback (in state)
+  - No handler for the second one
+- **Solution**: Unified both into single state flow
+  - `retry:{job_id}` → loads job from DB → `waiting_video_count` state
+  - `make_another_same_product` → uses FSM state data → `waiting_video_count` state
+  - Both converge at video count selection with same keyboard
+- **Files**: 
+  - [app/handlers/menu_and_flow.py](app/handlers/menu_and_flow.py) - handlers
+  - [worker/video_processor.py](worker/video_processor.py) - keyboard generation
+
+### 4. **Added Early KIE Validation Messaging**
+- **Improvement**: Notify users immediately if photo passes/fails Sora-2 checks
+- **Implementation**: 
+  - After task creation, poll KIE once for initial status
+  - If pass: "✅ Фото прошло проверку Sora 2, запускаю генерацию..."
+  - If fail: "⚠️ Фото не прошло проверку Sora 2" + requirements
+- **File**: [worker/worker.py](worker/worker.py)
+
+### 5. **Retry System Validation**
+- **Status**: ✅ Working correctly
+  - 3 automatic retry attempts on RATE_LIMIT/TEMPORARY errors
+  - Proper error classification (RATE_LIMIT, BILLING, TEMPORARY, UNKNOWN)
+  - Credit refunds working as expected
+  - User messages updated for each retry
+
+---
+
 ## ✅ System is Production-Ready!
 
 All critical issues fixed:

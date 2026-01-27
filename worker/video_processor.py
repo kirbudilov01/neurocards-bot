@@ -26,9 +26,12 @@ from worker.config import BOT_TOKEN, MAX_RETRY_ATTEMPTS, STORAGE_BASE_PATH
 logger = logging.getLogger(__name__)
 
 
-def kb_result(kind: str = "reels") -> InlineKeyboardMarkup:
+def kb_result(kind: str = "reels", job_id: str = "") -> InlineKeyboardMarkup:
+    """Клавиатура с кнопкой повтора видео после готовки"""
+    # Если есть job_id, добавляем его в callback для загрузки данных из БД
+    callback = f"retry:{job_id}" if job_id else "make_another_same_product"
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔁 Сгенерировать ещё", callback_data=f"again:{kind}")],
+        [InlineKeyboardButton(text="🔄 Сделать ещё с этим товаром", callback_data=callback)],
         [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")],
     ])
 
@@ -339,7 +342,7 @@ async def process_video_generation(job_data: dict) -> dict:
                     tg_user_id,
                     FSInputFile(video_path),
                     caption="✅ Ваше видео готово!",
-                    reply_markup=kb_result(job_data.get("kind", "reels"))
+                    reply_markup=kb_result(job_data.get("kind", "reels"), job_id)
                 )
                 logger.info(f"✅ Video sent successfully to user {tg_user_id}")
                 

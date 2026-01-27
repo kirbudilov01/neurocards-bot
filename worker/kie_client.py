@@ -48,6 +48,7 @@ def create_task_sora_i2v(prompt: str, image_url: str) -> tuple[str, str]:
         while retry_count < max_retries:
             try:
                 logger.info(f"📤 Creating KIE task (attempt {retry_count + 1}/{max_retries})...")
+                logger.debug(f"📋 KIE Request payload: model={model}, image_urls={payload['input']['image_urls']}, prompt_len={len(payload['input']['prompt'])}")
                 r = c.post(KIE_CREATE_TASK_URL, headers=_auth_headers_json(api_key), json=payload)
                 r.raise_for_status()
                 data = r.json()
@@ -82,12 +83,13 @@ def create_task_sora_i2v(prompt: str, image_url: str) -> tuple[str, str]:
                         info["body"] = e.response.text
                 
                 logger.warning(f"🔴 KIE HTTP error {status_code} (attempt {retry_count}/{max_retries}): {info}")
+                logger.debug(f"📋 Request was: {payload['input']}")
                 last_error = info
                 
                 # Retry на 500+ ошибках (server errors)
                 if status_code and status_code >= 500 and retry_count < max_retries:
                     wait_time = 5 * retry_count  # 5s, 10s, 15s
-                    logger.info(f"⏱️  Retrying in {wait_time}s...")
+                    logger.info(f"⏱️  KIE server error, retrying in {wait_time}s...")
                     time.sleep(wait_time)
                     continue
                 
