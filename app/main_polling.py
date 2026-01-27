@@ -30,18 +30,24 @@ from app.db_adapter import init_db_pool, close_db_pool
 
 async def start_health_server(port: int):
     """Запускает простой HTTP сервер для healthcheck."""
-    async def handle_healthz(request):
-        return web.Response(text="ok")
+    try:
+        async def handle_healthz(request):
+            return web.Response(text="ok")
 
-    app = web.Application()
-    app.router.add_get("/", handle_healthz)
-    app.router.add_get("/healthz", handle_healthz)
+        app = web.Application()
+        app.router.add_get("/", handle_healthz)
+        app.router.add_get("/healthz", handle_healthz)
 
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, host="0.0.0.0", port=port)
-    await site.start()
-    logger.info(f"🩺 Health server started on port {port}")
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, host="0.0.0.0", port=port)
+        await site.start()
+        logger.info(f"🩺 Health server started on port {port}")
+        
+        # Keep the server running indefinitely
+        await asyncio.Event().wait()
+    except Exception as e:
+        logger.error(f"❌ Failed to start health server on port {port}: {e}", exc_info=True)
 
 
 def create_bot_with_proxy() -> Bot:
