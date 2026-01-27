@@ -23,8 +23,11 @@ def create_task_sora_i2v(prompt: str, image_url: str) -> tuple[str, str]:
     api_key = rotator.get_key()
     
     # Усиливаем соответствие входному изображению
+    # Allow overriding model via env (fallback to sora-2-image-to-video)
+    model = os.getenv("KIE_MODEL", "sora-2-image-to-video").strip() or "sora-2-image-to-video"
+
     payload = {
-        "model": "sora-2-image-to-video",
+        "model": model,
         "input": {
             "prompt": f"{prompt}. Important: preserve the exact appearance of the product from the photo - color, shape, size, all details must match.",
             "image_urls": [image_url],
@@ -48,6 +51,18 @@ def create_task_sora_i2v(prompt: str, image_url: str) -> tuple[str, str]:
                 r = c.post(KIE_CREATE_TASK_URL, headers=_auth_headers_json(api_key), json=payload)
                 r.raise_for_status()
                 data = r.json()
+                # Some KIE endpoints return 200 HTTP but code!=200 in JSON
+                try:
+                    code_val = int(data.get("code", 200)) if isinstance(data.get("code", 200), (int, str)) else 200
+                except Exception:
+                    code_val = 200
+                if code_val != 200:
+                    msg = data.get("msg") or data.get("message") or "KIE error"
+                    info = {"status_code": 200, "data": data, "attempt": retry_count + 1}
+                    logger.warning(f"🔴 KIE JSON code {code_val}: {msg}")
+                    err = RuntimeError(f"KIE API code {code_val}: {msg}")
+                    err.kie_info = info
+                    raise err
                 logger.info(f"✅ KIE task created successfully")
                 break
             except httpx.HTTPStatusError as e:
