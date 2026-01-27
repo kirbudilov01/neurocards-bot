@@ -323,10 +323,13 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
         user_prompt = data.get("user_prompt")
         video_count = data.get("video_count", 1)
 
+        logging.info(f"🎯 START confirm_generation: user={cb.from_user.id}, videos={video_count}, kind={kind}")
+
         if template_id not in {"ugc", "ad", "self"}:
             template_id = "ugc"
 
         if not photo_file_id or not product_text:
+            logging.warning(f"❌ Missing data: photo_file_id={bool(photo_file_id)}, product_text={bool(product_text)}")
             await cb.message.answer(
                 "⚠️ Данных не хватает. Начни заново из меню.",
                 reply_markup=kb_back_to_menu(),
@@ -336,6 +339,8 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
             return
 
         credits = await safe_get_balance(cb.from_user.id)
+        logging.info(f"💳 User {cb.from_user.id} balance: {credits}, needed: {video_count}")
+        
         if credits < video_count:
             await cb.message.answer(
                 f"❌ Недостаточно кредитов.\n\nНужно: <b>{video_count}</b>\nУ вас: <b>{credits}</b>",
@@ -347,9 +352,12 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
 
         # Запускаем генерацию для каждого видео
         success_count = 0
+        error_count = 0
+        
         for i in range(video_count):
             # Уникальный idempotency_key для каждого видео
             idempotency_key = f"{cb.id}_{i}"
+            logging.info(f"📝 Creating job {i+1}/{video_count}, key={idempotency_key[:30]}...")
             
             job_id, _new_credits = await start_generation(
                 bot=cb.bot,
@@ -363,9 +371,14 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
             )
             if job_id:
                 success_count += 1
+                logging.info(f"✅ Job created: {job_id}")
+            else:
+                error_count += 1
+                logging.warning(f"❌ Job creation failed for video {i+1}")
 
         # Подтверждаем запуск только если есть успешно созданные задачи
         if success_count > 0:
+            logging.info(f"🎬 {success_count} jobs created successfully, {error_count} failed")
             await cb.message.answer(
                 f"✅ <b>Принял!</b>\n\n"
                 f"🎬 Генерация <b>{success_count} {'видео' if success_count == 1 else 'видео'}</b> запущена!\n\n"
@@ -374,12 +387,14 @@ async def confirm_generation(cb: CallbackQuery, state: FSMContext):
                 reply_markup=kb_back_to_menu(),
                 parse_mode=PARSE_MODE,
             )
+        else:
+            logging.error(f"❌ No jobs created! All {error_count} attempts failed")
 
         await state.clear()
     except Exception as e:
-        logging.error(f"Error in confirm_generation: {e}", exc_info=True)
+        logging.error(f"❌ Error in confirm_generation: {e}", exc_info=True)
         await cb.message.answer(
-            "⚠️ Ошибка, попробуй ещё раз",
+            "⚠️ Ошибка обработки запроса. Попробуй ещё раз.",
             reply_markup=kb_back_to_menu(),
             parse_mode=PARSE_MODE,
         )

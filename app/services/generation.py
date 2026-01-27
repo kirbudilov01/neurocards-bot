@@ -22,28 +22,48 @@ async def start_generation(
     extra_wishes: str | None,
     template_id: str,
 ):
+    """
+    Атомарное создание job'а с проверкой идемпотентности.
+    
+    Flow:
+    1. Проверить, существует ли уже job с таким idempotency_key
+    2. Скачать фото из Telegram
+    3. Загрузить фото в storage
+    4. Создать job в БД и списать кредит (RPC)
+    5. Обновить job дополнительными метаданными
+    6. Вернуть job_id и новый баланс
+    
+    Если ошибка - отправить сообщение пользователю и вернуть (None, None)
+    """
+    
+    logger.info(f"📦 START generate: user={tg_user_id}, template={template_id}, kind={kind}")
+    
     # 1) Проверить, существует ли уже job с таким idempotency key
     existing_job = await get_job_by_idempotency_key(idempotency_key)
     if existing_job:
-        # Если job уже существует, вернуть его ID и текущий баланс пользователя
+        logger.info(f"♻️ Job already exists for key {idempotency_key}: id={existing_job['id']}")
         current_credits = await safe_get_balance(tg_user_id)
         return existing_job["id"], current_credits
 
     # 2) скачать фото
+    logger.info(f"📥 Downloading photo from Telegram: file_id={photo_file_id[:30]}...")
     photo_bytes = await download_photo_bytes(bot, photo_file_id)
+    logger.info(f"✅ Downloaded {len(photo_bytes)} bytes")
 
     # 3) загрузить в storage
     # ВАЖНО: путь внутри bucket БЕЗ "inputs/"
     input_path = f"{tg_user_id}/{uuid.uuid4().hex}.jpg"
     storage = get_storage()
+    logger.info(f"📤 Uploading to storage: {input_path}")
     await storage.upload_input_photo(input_path, photo_bytes)
+    logger.info(f"✅ Uploaded to storage")
 
     # 4) создать job и списать кредит атомарно
     # Конвертируем product_info в JSON string для PostgreSQL JSONB
     prompt_input_str = ensure_json_string(product_info)
     
     try:
-        logger.info(f"📝 Calling RPC: create_job_and_consume_credit for user {tg_user_id}, key={idempotency_key[:20]}...")
+        logger.info(f"📝 RPC call: create_job_and_consume_credit for user {tg_user_id}, template={template_id}")
         result = await create_job_and_consume_credit(
             tg_user_id=tg_user_id,
             template_type=kind,
@@ -51,12 +71,12 @@ async def start_generation(
             photo_path=input_path,
             prompt_input=prompt_input_str,
         )
-        logger.info(f"✅ RPC returned: {result}")
+        logger.info(f"✅ RPC result: job_id={result['job_id']}, credits={result['new_credits']}")
         job_id = result["job_id"]
         new_credits = result["new_credits"]
         
         # 5) Обновляем job с дополнительными полями для worker
-        logger.info(f"📝 Updating job {job_id} with queue status...")
+        logger.info(f"📝 Updating job {job_id} with metadata...")
         
         # Строим JSON для error_details с метаданными
         import json
@@ -75,21 +95,25 @@ async def start_generation(
             "status": "queued"
         })
         
-        logger.info(f"✅ Job {job_id} created and added to PostgreSQL queue")
+        logger.info(f"✅ Job {job_id} created and added to PostgreSQL queue, waiting for worker")
         
     except Exception as e:
         # Логируем реальную ошибку с полным контекстом
         error_str = str(e)
-        logger.error(f"❌ Failed to create job for user {tg_user_id}: {error_str}", exc_info=True)
+        logger.error(f"❌ RPC failed for user {tg_user_id}: {error_str}", exc_info=True)
         
         # Определяем тип ошибки и отправляем специфичное сообщение
         if "insufficient" in error_str.lower() or "credits" in error_str.lower():
             error_msg = "❌ <b>Недостаточно кредитов.</b>\n\nПополните баланс и попробуйте снова."
+            logger.warning(f"⚠️ User {tg_user_id} has insufficient credits")
         elif "duplicate" in error_str.lower():
             error_msg = "⚠️ <b>Это задание уже обрабатывается.</b>\n\nПопробуйте создать новое."
+            logger.warning(f"⚠️ Duplicate key detected: {idempotency_key}")
         else:
             error_msg = f"⚠️ <b>Ошибка создания задания:</b>\n{error_str[:100]}"
+            logger.warning(f"⚠️ Generic error: {error_str[:100]}")
         
+        logger.info(f"📤 Sending error message to user {tg_user_id}")
         await bot.send_message(
             tg_user_id,
             error_msg,

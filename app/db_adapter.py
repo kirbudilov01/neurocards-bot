@@ -397,31 +397,32 @@ async def mark_job_failed_with_refund(
 # ---------------- WORKER FUNCTIONS ----------------
 
 async def fetch_next_queued_job() -> Optional[Dict[str, Any]]:
-    """Получает следующее задание из очереди (для worker'а)"""
+    """Получает следующее задание из очереди (для worker'а)
+    
+    ВАЖНО: Не обновляет статус! Worker сам вызовет update_job(status='processing')
+    Это предотвращает race condition если несколько worker'ов запущены.
+    """
     import logging
     logger = logging.getLogger(__name__)
     
     if DATABASE_TYPE == "postgres":
         pool = await get_pool()
         async with pool.acquire() as conn:
-            # Используем FOR UPDATE SKIP LOCKED для конкурентного доступа
+            # Получаем первый queued job БЕЗ UPDATE
+            # FOR UPDATE SKIP LOCKED предотвращает другим worker'ам брать этот job
             row = await conn.fetchrow(
                 """
-                UPDATE jobs
-                SET status = 'processing', started_at = NOW()
-                WHERE id = (
-                    SELECT id FROM jobs
-                    WHERE status = 'queued'
-                    ORDER BY created_at ASC
-                    FOR UPDATE SKIP LOCKED
-                    LIMIT 1
-                )
-                RETURNING *
+                SELECT * FROM jobs
+                WHERE status = 'queued'
+                ORDER BY created_at ASC
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
                 """
             )
             if row:
-                logger.info(f"✅ Fetched job {dict(row).get('id', 'unknown')} from queue")
-                return dict(row)
+                job_dict = dict(row)
+                logger.info(f"✅ Fetched job {job_dict.get('id', 'unknown')} from queue (status will be set by worker)")
+                return job_dict
             else:
                 logger.debug("⏳ No queued jobs found")
                 return None
