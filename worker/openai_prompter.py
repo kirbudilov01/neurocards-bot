@@ -66,9 +66,9 @@ def build_prompt_with_gpt(system: str, instructions: str, product_text: str, ext
     
     # 🔍 ЛОГИРУЕМ ЧТО ОТПРАВЛЯЕМ В GPT
     logger.info(f"🔍 DEBUG OpenAI Request:")
-    logger.info(f"  System: {system[:100]}...")
-    logger.info(f"  Product Text: {product_text[:100]}...")
-    logger.info(f"  Extra Wishes: {wishes[:100]}...")
+    logger.info(f"  System: {system[:200]}{'...' if len(system) > 200 else ''}")
+    logger.info(f"  Product Text: {product_text}")
+    logger.info(f"  Extra Wishes: {wishes}")
     logger.debug(f"  Full user message: {user_msg}")
 
     payload = {
