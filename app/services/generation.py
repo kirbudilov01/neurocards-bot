@@ -62,6 +62,10 @@ async def start_generation(
     # Конвертируем product_info в JSON string для PostgreSQL JSONB
     prompt_input_str = ensure_json_string(product_info)
     
+    # 🔍 DEBUG: Логируем что передаём
+    logger.info(f"🔍 DEBUG product_info dict: {product_info}")
+    logger.info(f"🔍 DEBUG prompt_input_str (JSON): {prompt_input_str[:500]}")
+    
     try:
         logger.info(f"📝 RPC call: create_job_and_consume_credit for user {tg_user_id}, template={template_id}")
         result = await create_job_and_consume_credit(

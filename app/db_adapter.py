@@ -147,6 +147,10 @@ async def create_job_and_consume_credit(
 ) -> Dict[str, Any]:
     """Создает задание и списывает кредит атомарно"""
     
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"🔍 DEBUG create_job_and_consume_credit called with prompt_input: {prompt_input[:500]}")
+    
     if DATABASE_TYPE == "postgres":
         pool = await get_pool()
         async with pool.acquire() as conn:
