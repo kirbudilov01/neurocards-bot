@@ -164,11 +164,22 @@ def build_script_for_job(job: dict) -> str:
     """
     logger.info(f"🔧 Building script for job {job.get('id')}")
     
-    template_id = (job.get("template_id") or "ugc").strip()
+    # Template_id хранится в error_details JSONB
+    error_details = job.get("error_details") or {}
+    if isinstance(error_details, str):
+        import json
+        try:
+            error_details = json.loads(error_details)
+        except:
+            error_details = {}
+    
+    template_id = error_details.get("template_id") or job.get("template_id") or "ugc"
+    template_id = template_id.strip()
     tpl = TEMPLATES.get(template_id) or TEMPLATES.get("ugc")
 
     # 🔍 DEBUG: Смотрим что есть в job
     logger.info(f"🔍 DEBUG job fields: product_info={job.get('product_info')}, product_text={job.get('product_text')[:100] if job.get('product_text') else None}, prompt={job.get('prompt')[:100] if job.get('prompt') else None}")
+    logger.info(f"🔍 DEBUG error_details: {error_details}")
     
     # ИСПРАВЛЕНИЕ: product_info НЕ существует в БД! Читаем из product_text (это JSON)
     product_info_raw = job.get("product_text") or job.get("prompt") or "{}"
@@ -197,6 +208,13 @@ def build_script_for_job(job: dict) -> str:
         user_prompt = (product_info.get("user_prompt") or "").strip()
         if not user_prompt:
             raise RuntimeError("self_template_missing_user_prompt")
+        
+        # Добавляем информацию о товаре в кастомный промпт
+        # Формат: "... Important: preserve the exact appearance of the product from the photo - {product_text}"
+        if product_text:
+            user_prompt = f"{user_prompt}\n\nINFO ABOUT PRODUCT: {product_text}\n\nImportant: preserve the exact appearance of the product from the photo - color, shape, size, all details must match."
+            logger.info(f"✅ Added product info to custom prompt: {product_text[:100]}...")
+        
         return user_prompt
 
     # GPT → сценарий/промпт
