@@ -29,7 +29,7 @@ def process_video_job(job_data: dict, **kwargs) -> dict:
         job_data: {
             "job_id": str,
             "tg_user_id": int,
-            "input_photo_path": str,
+            "product_image_url": str,  # or "input_photo_path" for backwards compat
             "product_info": dict,
             "template_id": str,
             "extra_wishes": str | None

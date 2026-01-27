@@ -398,6 +398,8 @@ async def mark_job_failed_with_refund(
 
 async def fetch_next_queued_job() -> Optional[Dict[str, Any]]:
     """Получает следующее задание из очереди (для worker'а)"""
+    import logging
+    logger = logging.getLogger(__name__)
     
     if DATABASE_TYPE == "postgres":
         pool = await get_pool()
@@ -417,7 +419,12 @@ async def fetch_next_queued_job() -> Optional[Dict[str, Any]]:
                 RETURNING *
                 """
             )
-            return dict(row) if row else None
+            if row:
+                logger.info(f"✅ Fetched job {dict(row).get('id', 'unknown')} from queue")
+                return dict(row)
+            else:
+                logger.debug("⏳ No queued jobs found")
+                return None
     
     else:
         res = await run_blocking(

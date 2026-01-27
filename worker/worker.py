@@ -31,7 +31,7 @@ from worker.prompt_templates import TEMPLATES  # ✅ ВАЖНО
 
 # Настройка логирования
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout)
@@ -179,7 +179,14 @@ def build_script_for_job(job: dict) -> str:
         return script
     except Exception as e:
         logger.error(f"❌ Failed to build script via GPT: {repr(e)}", exc_info=True)
-        raise
+        
+        # 🔄 FALLBACK: Используем базовый шаблон без GPT
+        logger.warning("⚠️ Falling back to template without GPT...")
+        fallback_prompt = tpl["instructions"].replace("{product_text}", product_text or "product")
+        if extra_wishes:
+            fallback_prompt += f" {extra_wishes}"
+        logger.info(f"✅ Fallback prompt: {fallback_prompt[:100]}...")
+        return fallback_prompt
 
 
 async def main():
@@ -217,6 +224,7 @@ async def main():
                 job = await fetch_next_queued_job()
                 
                 if not job:
+                    logger.debug(f"⏳ No job available, sleeping 2s...")
                     await asyncio.sleep(2)
                     continue
 
@@ -234,9 +242,9 @@ async def main():
                 await update_job(job_id, {"status": "processing", "started_at": "NOW()", "attempts": attempts})
                 logger.info(f"🔄 Job {job_id} attempt {attempts}")
 
-                input_path = job.get("input_photo_path")
+                input_path = job.get("product_image_url")
                 if not input_path:
-                    raise RuntimeError("Missing input_photo_path")
+                    raise RuntimeError("Missing product_image_url")
 
                 image_url = await get_public_input_url(input_path)
                 logger.info(f"🖼️ IMAGE_URL: {image_url}")
@@ -257,13 +265,15 @@ async def main():
                 logger.info(f"✅ KIE task created: {task_id}")
                 await update_job(job_id, {"kie_task_id": task_id})
 
-                await bot.send_message(
-                    tg_user_id,
-                    "🎬 Генерация запущена.\n\n"
-                    "⏱ Обычно это занимает от <b>1 до 30 минут</b> в зависимости от загруженности нейросети Sora 2.\n\n"
-                    "Ожидайте, я пришлю результат сюда.",
-                    parse_mode="HTML",
-                )
+                # Отправляем уведомление только при первой попытке
+                if attempts == 1:
+                    await bot.send_message(
+                        tg_user_id,
+                        "🎬 <b>Генерация запущена!</b>\n\n"
+                        "⏱ Обработка занимает от <b>1 до 30 минут</b> в зависимости от загруженности Sora 2.\n\n"
+                        "Ожидайте, я пришлю результат сюда.",
+                        parse_mode="HTML",
+                    )
                 
                 logger.info(f"⏳ Polling KIE for task {task_id}...")
                 # Увеличим таймаут до 6 минут (360 сек) для большей надежности
@@ -295,11 +305,20 @@ async def main():
                         retry_delay = get_retry_delay(error_type, attempts)
                         logger.info(f"🔄 Will retry job {job_id} after {retry_delay}s (attempt {attempts}/{MAX_RETRY_ATTEMPTS})")
                         
-                        # Уведомляем пользователя о временной ошибке (только при первом retry)
-                        if error_type == KieErrorType.TEMPORARY and attempts == 2:
+                        # Уведомляем пользователя о retry
+                        if error_type == KieErrorType.TEMPORARY:
                             await bot.send_message(
                                 tg_user_id,
-                                "⚠️ KIE временно недоступен, повторяю попытку...",
+                                f"⏳ <b>Sora 2 перегружена</b>\n\n"
+                                f"Автоматически пробуем снова (попытка {attempts} из {MAX_RETRY_ATTEMPTS})...\n"
+                                f"Это может занять несколько минут.",
+                                parse_mode="HTML",
+                            )
+                        elif error_type == KieErrorType.RATE_LIMIT:
+                            await bot.send_message(
+                                tg_user_id,
+                                f"⏳ <b>Превышен лимит запросов</b>\n\n"
+                                f"Автоматически пробуем с другим ключом (попытка {attempts} из {MAX_RETRY_ATTEMPTS})...",
                                 parse_mode="HTML",
                             )
                         

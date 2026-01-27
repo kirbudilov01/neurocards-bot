@@ -145,7 +145,7 @@ async def process_video_generation(job_data: dict) -> dict:
     """
     job_id = job_data["job_id"]
     tg_user_id = job_data["tg_user_id"]
-    input_photo_path = job_data["input_photo_path"]
+    input_photo_path = job_data.get("product_image_url") or job_data.get("input_photo_path")
     product_info = job_data["product_info"]
     template_id = job_data.get("template_id", "ugc")
     extra_wishes = job_data.get("extra_wishes")
