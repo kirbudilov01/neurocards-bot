@@ -58,6 +58,7 @@ def req(name: str) -> str:
 
 
 BOT_TOKEN = req("BOT_TOKEN")
+SERVICE_CHANNEL_ID = int(os.getenv("SERVICE_CHANNEL_ID", "0"))  # Optional: for pre-uploading videos
 
 
 def now_iso() -> str:
@@ -538,7 +539,7 @@ async def main():
                         reply_markup=kb_result(kind),
                     )
                 else:
-                    logger.info(f"📤 Sending video to user {tg_user_id}")
+                    logger.info(f"📤 Preparing to send video to user {tg_user_id}")
                     # Готовим кнопки с retry
                     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
                     retry_markup = InlineKeyboardMarkup(inline_keyboard=[
@@ -546,17 +547,61 @@ async def main():
                         [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")]
                     ])
                     
-                    # Отправляем видео и сохраняем file_id для быстрых повторных отправок
-                    video_msg = await bot.send_video(
-                        tg_user_id,
-                        video=BufferedInputFile(data, filename="reels.mp4"),
-                        caption="✅ <b>Видео готово!</b>",
-                        parse_mode="HTML",
-                        reply_markup=retry_markup,
-                    )
+                    video_file_id = ""
                     
-                    # Сохраняем file_id для быстрых повторных отправок (без скачивания)
-                    video_file_id = video_msg.video.file_id if video_msg.video else ""
+                    # СТРАТЕГИЯ: Сначала загружаем в служебный канал (с большим timeout),
+                    # затем отправляем пользователю по file_id (мгновенно)
+                    if SERVICE_CHANNEL_ID:
+                        try:
+                            logger.info(f"📤 Pre-uploading video to service channel {SERVICE_CHANNEL_ID}...")
+                            service_msg = await bot.send_video(
+                                SERVICE_CHANNEL_ID,
+                                video=BufferedInputFile(data, filename="reels.mp4"),
+                                caption=f"Job: {job_id}",
+                                request_timeout=600,  # Большой timeout для первой загрузки
+                            )
+                            video_file_id = service_msg.video.file_id if service_msg.video else ""
+                            logger.info(f"✅ Pre-uploaded to service channel, file_id: {video_file_id[:30]}...")
+                            
+                            # Отправляем пользователю по file_id (мгновенно!)
+                            logger.info(f"📤 Sending video to user {tg_user_id} via file_id...")
+                            await bot.send_video(
+                                tg_user_id,
+                                video=video_file_id,
+                                caption="✅ <b>Видео готово!</b>",
+                                parse_mode="HTML",
+                                reply_markup=retry_markup,
+                                request_timeout=30,  # Быстро
+                            )
+                            logger.info(f"✅ Video sent to user via file_id")
+                            
+                        except Exception as upload_error:
+                            logger.error(f"❌ Failed to pre-upload to service channel: {upload_error}")
+                            # Fallback: отправляем напрямую
+                            logger.info(f"📤 Fallback: sending directly to user...")
+                            video_msg = await bot.send_video(
+                                tg_user_id,
+                                video=BufferedInputFile(data, filename="reels.mp4"),
+                                caption="✅ <b>Видео готово!</b>",
+                                parse_mode="HTML",
+                                reply_markup=retry_markup,
+                                request_timeout=600,
+                            )
+                            video_file_id = video_msg.video.file_id if video_msg.video else ""
+                    else:
+                        # Если SERVICE_CHANNEL_ID не настроен - отправляем напрямую
+                        logger.info(f"📤 Sending video directly to user {tg_user_id}...")
+                        video_msg = await bot.send_video(
+                            tg_user_id,
+                            video=BufferedInputFile(data, filename="reels.mp4"),
+                            caption="✅ <b>Видео готово!</b>",
+                            parse_mode="HTML",
+                            reply_markup=retry_markup,
+                            request_timeout=600,
+                        )
+                        video_file_id = video_msg.video.file_id if video_msg.video else ""
+                    
+                    # Сохраняем file_id для быстрых повторных отправок
                     await update_job(job_id, {
                         "status": "completed",
                         "finished_at": "NOW()",
