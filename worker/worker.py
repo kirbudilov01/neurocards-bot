@@ -547,6 +547,11 @@ async def main():
                         [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")]
                     ])
                     
+                    # Клавиатура только для видео-сообщения (без кнопки "Сделать ещё")
+                    video_markup = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")]
+                    ])
+                    
                     video_file_id = ""
                     
                     # СТРАТЕГИЯ: Сначала загружаем в служебный канал (с большим timeout),
@@ -570,7 +575,7 @@ async def main():
                                 video=video_file_id,
                                 caption="✅ <b>Видео готово!</b>",
                                 parse_mode="HTML",
-                                reply_markup=retry_markup,
+                                reply_markup=video_markup,
                                 request_timeout=30,  # Быстро
                             )
                             logger.info(f"✅ Video sent to user via file_id")
@@ -598,7 +603,7 @@ async def main():
                                 video=BufferedInputFile(data, filename="reels.mp4"),
                                 caption="✅ <b>Видео готово!</b>",
                                 parse_mode="HTML",
-                                reply_markup=retry_markup,
+                                reply_markup=video_markup,
                                 request_timeout=600,
                             )
                             video_file_id = video_msg.video.file_id if video_msg.video else ""
@@ -610,7 +615,7 @@ async def main():
                             video=BufferedInputFile(data, filename="reels.mp4"),
                             caption="✅ <b>Видео готово!</b>",
                             parse_mode="HTML",
-                            reply_markup=retry_markup,
+                            reply_markup=video_markup,
                             request_timeout=600,
                         )
                         video_file_id = video_msg.video.file_id if video_msg.video else ""
