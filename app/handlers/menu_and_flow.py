@@ -241,9 +241,6 @@ async def confirm_test_payment(cb: CallbackQuery):
             "❌ Ошибка при подтверждении платежа.",
             parse_mode=PARSE_MODE,
         )
-        reply_markup=kb_cabinet(),
-        parse_mode=PARSE_MODE,
-    )
 
 
 # @router.callback_query(F.data == "support")  
