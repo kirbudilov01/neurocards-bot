@@ -450,7 +450,7 @@ async def retry_same_product(cb: CallbackQuery, state: FSMContext):
 # Handler для "Сделать еще с этим товаром" (когда нет job_id в callback)
 @router.callback_query(F.data == "make_another_same_product")
 async def make_another_same_product(cb: CallbackQuery, state: FSMContext):
-    """Повторная генерация с теми же данными (но сохраненные в state)"""
+    """Повторная генерация с теми же данными товара - перейти к выбору шаблона"""
     await cb.answer()
     
     # Получаем данные из текущего state
@@ -465,16 +465,12 @@ async def make_another_same_product(cb: CallbackQuery, state: FSMContext):
         await state.clear()
         return
     
-    # Сначала пользователь выбирает новый промт/пожелания (wishes)
+    # Сохраняем текущие данные товара и переходим прямо к выбору шаблона
+    # (уже есть photo_file_id и product_text в state)
+    await state.set_state(GenFlow.waiting_template)
     await cb.message.answer(
-        "🎬 <b>Отлично! Делаем ещё видео с этим товаром.</b>\n\n"
-        "Как бы ты хотел, чтобы выглядело видео? Это может быть:\n"
-        "👔 <b>Реклама</b> — классическая реклама товара\n"
-        "🎬 <b>UGC / Видеоблог</b> — неформальный стиль блогера\n"
-        "💡 <b>Свой вариант</b> — напиши что тебе нужно\n\n"
-        "Просто напиши свои пожелания!",
-        reply_markup=kb_back_to_menu(),
+        getattr(texts, "CHOOSE_TEMPLATE", "🎛 Выбери шаблон:"),
+        reply_markup=kb_templates(),
         parse_mode=PARSE_MODE,
     )
-    await state.set_state(GenFlow.waiting_wishes)
 
