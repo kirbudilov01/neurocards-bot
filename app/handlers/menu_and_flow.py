@@ -4,6 +4,7 @@ from aiogram.types import CallbackQuery, Message, FSInputFile, InlineKeyboardBut
 from aiogram.fsm.context import FSMContext
 
 from app import texts
+from app import config as app_config
 from app.states import GenFlow  # ✅ Импортируем из states
 from app.keyboards import (
     kb_menu,
@@ -76,6 +77,13 @@ async def cabinet(cb: CallbackQuery):
         await cb.answer()
         await get_or_create_user(cb.from_user.id, cb.from_user.username)
         bal = await safe_get_balance(cb.from_user.id)
+        logger.info(
+            "Cabinet debug: tg_user_id=%s, username=%s, balance=%s, db_type=%s",
+            cb.from_user.id,
+            cb.from_user.username,
+            bal,
+            getattr(app_config, "DATABASE_TYPE", "unknown"),
+        )
 
         cabinet_tpl = getattr(
             texts,

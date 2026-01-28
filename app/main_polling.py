@@ -170,6 +170,8 @@ async def main():
         logger.info("🛑 Bot stopped by user (KeyboardInterrupt)")
     except Exception as e:
         logger.error(f"❌ Error during polling: {e}", exc_info=True)
+        # Завершаем процесс с ненулевым кодом, чтобы Docker перезапустил контейнер
+        raise SystemExit(1)
     finally:
         await bot.session.close()
         await close_db_pool()
