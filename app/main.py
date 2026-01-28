@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 from app.config import BOT_TOKEN, PUBLIC_BASE_URL, WEBHOOK_SECRET_TOKEN
 from app.handlers import start, menu_and_flow, fallback
 from app.db_adapter import init_db_pool, close_db_pool
+from app import webhooks
 
 
 WEBHOOK_PATH = "/telegram/webhook"
@@ -186,6 +187,65 @@ async def main():
         app.router.add_get("/", handle_healthz)
         app.router.add_get("/healthz", handle_healthz)
         app.router.add_get("/queue_stats", handle_queue_stats)
+
+        # Payment webhooks (Yookassa, etc.)
+        app.include_subapp("/api", web.Application())
+        
+        # Register payment webhook handlers
+        from aiohttp import web as aiohttp_web
+        
+        # Create a simple wrapper for FastAPI router to work with aiohttp
+        async def yookassa_webhook_handler(request):
+            """Handler for Yookassa webhook"""
+            try:
+                import json
+                from app.services.payment import PaymentService
+                from app.db_adapter import execute_db_query
+                
+                data = await request.json()
+                logger.info(f"📨 Received Yookassa webhook: {data.get('event')}")
+                
+                # Extract payment info
+                payment_info = PaymentService.extract_payment_info(data)
+                if not payment_info:
+                    logger.warning("⚠️ Could not extract payment info")
+                    return web.json_response({"status": "ignored"})
+                
+                status = payment_info["status"]
+                user_id = payment_info["user_id"]
+                credits = payment_info["credits"]
+                payment_id = payment_info["payment_id"]
+                
+                if status == "succeeded":
+                    # Update balance
+                    await execute_db_query(
+                        "UPDATE users SET credits = credits + $1 WHERE tg_id = $2",
+                        credits,
+                        user_id
+                    )
+                    logger.info(f"✅ Credits added: user {user_id} +{credits}")
+                    
+                    # Notify user
+                    try:
+                        await bot.send_message(
+                            user_id,
+                            f"✅ <b>Платеж успешно обработан!</b>\n\n"
+                            f"На ваш баланс добавлено: <b>{credits} кредит(ов)</b>\n\n"
+                            f"💳 Спасибо за поддержку! 🎉",
+                            parse_mode="HTML"
+                        )
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to notify user {user_id}: {e}")
+                    
+                    return web.json_response({"status": "success"})
+                
+                return web.json_response({"status": status})
+            except Exception as e:
+                logger.error(f"❌ Webhook error: {e}", exc_info=True)
+                return web.json_response({"status": "error", "message": str(e)}, status=400)
+        
+        app.router.add_post("/api/webhook/yookassa", yookassa_webhook_handler)
+        logger.info("✅ Registered Yookassa webhook at /api/webhook/yookassa")
 
         # Webhook endpoint
         SimpleRequestHandler(

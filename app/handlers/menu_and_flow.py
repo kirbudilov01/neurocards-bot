@@ -19,6 +19,8 @@ from app.db_adapter import get_or_create_user, safe_get_balance, get_user_jobs
 from app.services.generation import start_generation
 from app.utils import ensure_dict
 
+logger = logging.getLogger(__name__)
+
 router = Router()
 
 PARSE_MODE = "HTML"
@@ -105,9 +107,78 @@ async def topup(cb: CallbackQuery):
 
 @router.callback_query(F.data.startswith("pay:"))
 async def pay_stub(cb: CallbackQuery):
+    """Handle payment selection - create Yookassa payment"""
     await cb.answer()
-    await cb.message.answer(
-        getattr(texts, "PAY_STUB", "Оплата в разработке."),
+    
+    try:
+        # Extract credits amount from callback data
+        credits_str = cb.data.split(":", 1)[1]
+        credits = int(credits_str)
+        
+        # Import here to avoid circular imports
+        from app.services.payment import PaymentService
+        
+        # Check if Yookassa is configured
+        if not PaymentService.is_configured():
+            logger.warning("⚠️ Yookassa not configured - creating test payment")
+        
+        # Create payment
+        payment_data = PaymentService.create_payment(cb.from_user.id, credits)
+        
+        if not payment_data:
+            await cb.message.answer(
+                "❌ Ошибка создания платежа. Попробуйте позже.",
+                parse_mode=PARSE_MODE,
+            )
+            return
+        
+        payment_id = payment_data.get("payment_id")
+        confirmation_url = payment_data.get("confirmation_url")
+        
+        # Show payment message with link
+        message_text = (
+            f"💳 <b>Оплата {credits} кредит(ов)</b>\n\n"
+            f"Сумма: <b>{PaymentService.PRICE_TIERS.get(credits, 'N/A')} ₽</b>\n\n"
+            f"ID платежа: <code>{payment_id}</code>\n\n"
+        )
+        
+        if confirmation_url:
+            message_text += f"<a href=\"{confirmation_url}\">Перейти к оплате →</a>\n\n"
+        
+        message_text += (
+            "После успешной оплаты кредиты автоматически добавятся на баланс.\n\n"
+            "Если платеж не прошёл, свяжитесь с поддержкой."
+        )
+        
+        # Create inline keyboard with payment link
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="💳 Перейти к оплате",
+                url=confirmation_url
+            )] if confirmation_url else [],
+            [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
+        ])
+        
+        await cb.message.answer(
+            message_text,
+            reply_markup=keyboard,
+            parse_mode=PARSE_MODE,
+        )
+        
+        logger.info(f"✅ Payment created for user {cb.from_user.id}: {payment_id}")
+        
+    except ValueError:
+        await cb.message.answer(
+            "❌ Ошибка обработки платежа.",
+            parse_mode=PARSE_MODE,
+        )
+    except Exception as e:
+        logger.error(f"❌ Payment handler error: {e}", exc_info=True)
+        await cb.message.answer(
+            "❌ Ошибка системы. Попробуйте позже.",
+            parse_mode=PARSE_MODE,
+        )
         reply_markup=kb_cabinet(),
         parse_mode=PARSE_MODE,
     )
