@@ -1,6 +1,6 @@
 from aiogram import Router
 from aiogram.filters import CommandStart
-from aiogram.types import Message, FSInputFile
+from aiogram.types import Message, FSInputFile, LinkPreviewOptions
 import logging
 
 from app import texts
@@ -30,7 +30,12 @@ async def start_handler(message: Message):
             "и также даю свое согласие на обработку персональных данных и принимаю "
             "\u003ca href=\"https://disk.yandex.ru/i/EgdIQo4Nhq9xog\"\u003eполитику конфиденциальности\u003c/a\u003e."
         )
-        await message.answer(terms_text, reply_markup=kb_accept_terms(), parse_mode="HTML")
+        await message.answer(
+            terms_text,
+            reply_markup=kb_accept_terms(),
+            parse_mode="HTML",
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
         logger.info("✅ Terms consent message sent successfully")
     except Exception as e:
         logger.error(f"❌ Failed to send terms message: {e}")
