@@ -6,6 +6,7 @@ class GenFlow(StatesGroup):
     waiting_template = State()
     waiting_wishes = State()
     waiting_user_prompt = State()
+    waiting_self_prompt_confirm = State()  # Подтверждение своего промта
     waiting_video_count = State()
     waiting_confirm = State()
     

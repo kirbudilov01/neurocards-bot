@@ -7,6 +7,12 @@ def kb_continue():
         [InlineKeyboardButton(text="✅ Продолжить", callback_data="continue")]
     ])
 
+# ========== TERMS ==========
+def kb_accept_terms():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Принимаю условия", callback_data="accept_terms")]
+    ])
+
 
 # ========== MAIN MENU ==========
 def kb_menu():
@@ -43,6 +49,16 @@ def kb_confirm(count: int = 1):
     text = f"🚀 Запустить ({cost} {'кредит' if cost == 1 else 'кредита' if cost < 5 else 'кредитов'})"
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=text, callback_data="confirm_generation")],
+        [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")],
+    ])
+
+
+# ========== SELF PROMPT CONFIRM ==========
+def kb_self_prompt_confirm():
+    """Клавиатура для подтверждения своего промта"""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Утвердить", callback_data="confirm_self_prompt")],
+        [InlineKeyboardButton(text="✏️ Дополнить", callback_data="edit_self_prompt")],
         [InlineKeyboardButton(text="🏠 Вернуться в меню", callback_data="back_to_menu")],
     ])
 

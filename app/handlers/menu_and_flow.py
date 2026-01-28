@@ -14,6 +14,7 @@ from app.keyboards import (
     kb_templates,
     kb_topup,     # ✅ ВАЖНО
     kb_video_count,  # ✅ Новая клавиатура
+    kb_self_prompt_confirm,  # ✅ Подтверждение своего промта
 )
 from app.db_adapter import get_or_create_user, safe_get_balance, get_user_jobs, add_credits
 from app.services.generation import start_generation
@@ -355,14 +356,30 @@ async def on_template(cb: CallbackQuery, state: FSMContext):
 @router.message(GenFlow.waiting_user_prompt, F.text)
 async def on_user_prompt(message: Message, state: FSMContext):
     try:
-        user_prompt = message.text.strip()
+        # Текст ввода
+        new_input = message.text.strip()
+
+        # Если это повторный ввод (после "Дополнить"), аккуратно объединяем
+        data = await state.get_data()
+        prev_prompt = (data.get("user_prompt") or "").strip()
+
+        if prev_prompt:
+            # Эвристика: короткий текст считаем дополнением, длинный — заменой
+            if len(new_input) < 50:
+                user_prompt = f"{prev_prompt} {new_input}".strip()
+            else:
+                user_prompt = new_input
+        else:
+            user_prompt = new_input
+
         await state.update_data(user_prompt=user_prompt)
-        await state.set_state(GenFlow.waiting_video_count)
+        await state.set_state(GenFlow.waiting_self_prompt_confirm)
 
         await message.answer(
-            "🎬 <b>Сколько видео хочешь сгенерировать?</b>\n\n"
-            "Каждое видео = 1 кредит",
-            reply_markup=kb_video_count(),
+            f"<b>Вот твой промт:</b>\n\n"
+            f"<i>{user_prompt}</i>\n\n"
+            f"Если хочешь дополнить — отправь дополнение, или утверди промт.",
+            reply_markup=kb_self_prompt_confirm(),
             parse_mode=PARSE_MODE,
         )
     except Exception as e:
@@ -372,6 +389,55 @@ async def on_user_prompt(message: Message, state: FSMContext):
             reply_markup=kb_back_to_menu(),
             parse_mode=PARSE_MODE,
         )
+
+
+@router.callback_query(GenFlow.waiting_self_prompt_confirm, F.data == "confirm_self_prompt")
+async def on_confirm_self_prompt(cb: CallbackQuery, state: FSMContext):
+    """Подтверждение своего промта - идет прямо к генерации"""
+    await cb.answer()
+    
+    # Получаем данные
+    data = await state.get_data()
+    user_prompt = data.get("user_prompt")
+    
+    if not user_prompt:
+        await cb.message.answer(
+            "⚠️ Ошибка: промт не найден",
+            reply_markup=kb_back_to_menu(),
+            parse_mode=PARSE_MODE,
+        )
+        return
+    
+    # Для self-промта идем сразу к выбору количества видео
+    # (пропускаем этап пожеланий)
+    await state.set_state(GenFlow.waiting_video_count)
+    
+    await cb.message.edit_text(
+        f"✅ <b>Промт утвержден:</b>\n\n"
+        f"<i>{user_prompt}</i>\n\n"
+        f"<b>Сколько видео сделать?</b>",
+        reply_markup=kb_video_count(),
+        parse_mode=PARSE_MODE,
+    )
+
+
+@router.callback_query(GenFlow.waiting_self_prompt_confirm, F.data == "edit_self_prompt")
+async def on_edit_self_prompt(cb: CallbackQuery, state: FSMContext):
+    """Редактирование своего промта - возврат к вводу с текущим промтом"""
+    await cb.answer()
+    
+    data = await state.get_data()
+    user_prompt = data.get("user_prompt", "")
+    
+    await state.set_state(GenFlow.waiting_user_prompt)
+    
+    await cb.message.edit_text(
+        f"<b>Текущий промт:</b>\n\n"
+        f"<i>{user_prompt}</i>\n\n"
+        f"✏️ Отправь дополнение к промту (дополнит или заменит текущий):",
+        reply_markup=kb_back_to_menu(),
+        parse_mode=PARSE_MODE,
+    )
 
 
 @router.message(GenFlow.waiting_wishes, F.text)
