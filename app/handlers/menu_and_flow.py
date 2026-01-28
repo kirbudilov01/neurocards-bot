@@ -188,13 +188,14 @@ async def pay_stub(cb: CallbackQuery):
         
         logger.info(f"✅ Payment created for user {cb.from_user.id}: {payment_id} (test={is_test_mode})")
         
-    except ValueError:
+    except ValueError as ve:
+        logger.error(f"❌ ValueError in payment handler: {ve}", exc_info=True)
         await cb.message.answer(
             "❌ Ошибка обработки платежа.",
             parse_mode=PARSE_MODE,
         )
     except Exception as e:
-        logger.error(f"❌ Payment handler error: {e}", exc_info=True)
+        logger.error(f"❌ Payment handler error: {type(e).__name__}: {e}", exc_info=True)
         await cb.message.answer(
             "❌ Ошибка системы. Попробуйте позже.",
             parse_mode=PARSE_MODE,
