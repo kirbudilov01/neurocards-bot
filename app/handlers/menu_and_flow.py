@@ -15,7 +15,7 @@ from app.keyboards import (
     kb_topup,     # ✅ ВАЖНО
     kb_video_count,  # ✅ Новая клавиатура
 )
-from app.db_adapter import get_or_create_user, safe_get_balance, get_user_jobs
+from app.db_adapter import get_or_create_user, safe_get_balance, get_user_jobs, execute_db_query
 from app.services.generation import start_generation
 from app.utils import ensure_dict
 
@@ -119,7 +119,8 @@ async def pay_stub(cb: CallbackQuery):
         from app.services.payment import PaymentService
         
         # Check if Yookassa is configured
-        if not PaymentService.is_configured():
+        is_test_mode = not PaymentService.is_configured()
+        if is_test_mode:
             logger.warning("⚠️ Yookassa not configured - creating test payment")
         
         # Create payment
@@ -142,23 +143,42 @@ async def pay_stub(cb: CallbackQuery):
             f"ID платежа: <code>{payment_id}</code>\n\n"
         )
         
-        if confirmation_url:
+        if is_test_mode:
+            message_text += (
+                "🧪 <b>ТЕСТОВЫЙ РЕЖИМ</b>\n\n"
+                "Платежная система не подключена. "
+                "Нажмите кнопку ниже чтобы имитировать платеж и получить кредиты.\n\n"
+            )
+        elif confirmation_url:
             message_text += f"<a href=\"{confirmation_url}\">Перейти к оплате →</a>\n\n"
         
-        message_text += (
-            "После успешной оплаты кредиты автоматически добавятся на баланс.\n\n"
-            "Если платеж не прошёл, свяжитесь с поддержкой."
-        )
+        if not is_test_mode:
+            message_text += (
+                "После успешной оплаты кредиты автоматически добавятся на баланс.\n\n"
+                "Если платеж не прошёл, свяжитесь с поддержкой."
+            )
         
-        # Create inline keyboard with payment link
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="💳 Перейти к оплате",
-                url=confirmation_url
-            )] if confirmation_url else [],
-            [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
-        ])
+        # Create inline keyboard
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+        
+        if is_test_mode:
+            # Test mode: add confirm button
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="✅ Подтвердить тестовый платеж",
+                    callback_data=f"test_payment_confirm:{payment_id}:{credits}"
+                )],
+                [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
+            ])
+        else:
+            # Real mode: add payment link
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="💳 Перейти к оплате",
+                    url=confirmation_url
+                )] if confirmation_url else [],
+                [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
+            ])
         
         await cb.message.answer(
             message_text,
@@ -166,7 +186,7 @@ async def pay_stub(cb: CallbackQuery):
             parse_mode=PARSE_MODE,
         )
         
-        logger.info(f"✅ Payment created for user {cb.from_user.id}: {payment_id}")
+        logger.info(f"✅ Payment created for user {cb.from_user.id}: {payment_id} (test={is_test_mode})")
         
     except ValueError:
         await cb.message.answer(
@@ -177,6 +197,48 @@ async def pay_stub(cb: CallbackQuery):
         logger.error(f"❌ Payment handler error: {e}", exc_info=True)
         await cb.message.answer(
             "❌ Ошибка системы. Попробуйте позже.",
+            parse_mode=PARSE_MODE,
+        )
+
+
+@router.callback_query(F.data.startswith("test_payment_confirm:"))
+async def confirm_test_payment(cb: CallbackQuery):
+    """Confirm test payment and add credits"""
+    await cb.answer()
+    
+    try:
+        # Parse data: test_payment_confirm:payment_id:credits
+        parts = cb.data.split(":")
+        if len(parts) < 3:
+            await cb.message.answer("❌ Некорректные данные платежа.")
+            return
+        
+        payment_id = parts[1]
+        credits = int(parts[2])
+        user_id = cb.from_user.id
+        
+        # Add credits to user balance
+        await execute_db_query(
+            "UPDATE users SET credits = credits + $1 WHERE tg_id = $2",
+            credits,
+            user_id
+        )
+        
+        logger.info(f"✅ Test payment confirmed: user {user_id} +{credits} credits")
+        
+        # Send confirmation message
+        await cb.message.answer(
+            f"✅ <b>Тестовый платеж подтвержден!</b>\n\n"
+            f"На ваш баланс добавлено: <b>{credits} кредит(ов)</b> 🎉\n\n"
+            f"Теперь вы можете создавать видео! 🎬",
+            parse_mode=PARSE_MODE,
+            reply_markup=kb_menu(),
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Test payment confirmation error: {e}", exc_info=True)
+        await cb.message.answer(
+            "❌ Ошибка при подтверждении платежа.",
             parse_mode=PARSE_MODE,
         )
         reply_markup=kb_cabinet(),
