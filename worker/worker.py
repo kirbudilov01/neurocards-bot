@@ -371,6 +371,13 @@ async def main():
                     if status0 in {"waiting", "processing", "running", "queued", "pending", "doing"}:
                         # Already notified with "Генерация запущена" message above
                         accepted_notified = True
+                        # Отправляем сообщение о прохождении модерации
+                        await bot.send_message(
+                            tg_user_id,
+                            "✅ <b>Фото прошло проверку модерации!</b>\n\n"
+                            "🎬 Sora 2 начала генерировать видео... ⏳",
+                            parse_mode="HTML",
+                        )
                     elif status0 in {"failed", "fail", "error", "canceled", "cancelled"}:
                         logger.warning(f"❌ Initial KIE status fail: code={fail_code0}, msg={fail_msg0}")
                         error_type, error_msg = classify_kie_error(initial_info)
@@ -574,6 +581,20 @@ async def main():
                                 request_timeout=30,  # Быстро
                             )
                             logger.info(f"✅ Video sent to user via file_id")
+                            
+                            # Отправляем финальное сообщение об итоге
+                            try:
+                                await bot.send_message(
+                                    tg_user_id,
+                                    "🎉 <b>Видео успешно готово и отправлено!</b>\n\n"
+                                    "💡 Результат в видео выше ☝️\n\n"
+                                    "🎬 Можешь заказать ещё видео этого товара или вернуться в меню",
+                                    parse_mode="HTML",
+                                    reply_markup=retry_markup,
+                                )
+                                logger.info(f"✅ Final result message sent")
+                            except Exception as msg_error:
+                                logger.error(f"⚠️ Failed to send final message: {msg_error}")
                             
                         except Exception as upload_error:
                             logger.error(f"❌ Failed to pre-upload to service channel: {upload_error}")

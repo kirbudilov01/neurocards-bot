@@ -434,7 +434,7 @@ async def retry_same_product(cb: CallbackQuery, state: FSMContext):
         kind=job["kind"],
         photo_file_id=job["product_image_url"],
         product_text=job["product_text"],
-        template_id=job["template_type"],
+        template_id=job.get("template_id") or job.get("template_type") or "ugc",
     )
     
     # Переходим сразу к выбору количества видео (уже есть photo, product_text, template)
