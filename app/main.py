@@ -200,7 +200,7 @@ async def main():
             try:
                 import json
                 from app.services.payment import PaymentService
-                from app.db_adapter import execute_db_query
+                from app.db_adapter import add_credits
                 
                 data = await request.json()
                 logger.info(f"📨 Received Yookassa webhook: {data.get('event')}")
@@ -218,11 +218,7 @@ async def main():
                 
                 if status == "succeeded":
                     # Update balance
-                    await execute_db_query(
-                        "UPDATE users SET credits = credits + $1 WHERE tg_id = $2",
-                        credits,
-                        user_id
-                    )
+                    await add_credits(user_id, credits, "yookassa_payment")
                     logger.info(f"✅ Credits added: user {user_id} +{credits}")
                     
                     # Notify user

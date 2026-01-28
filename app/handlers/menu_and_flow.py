@@ -15,7 +15,7 @@ from app.keyboards import (
     kb_topup,     # ✅ ВАЖНО
     kb_video_count,  # ✅ Новая клавиатура
 )
-from app.db_adapter import get_or_create_user, safe_get_balance, get_user_jobs, execute_db_query
+from app.db_adapter import get_or_create_user, safe_get_balance, get_user_jobs, add_credits
 from app.services.generation import start_generation
 from app.utils import ensure_dict
 
@@ -218,11 +218,7 @@ async def confirm_test_payment(cb: CallbackQuery):
         user_id = cb.from_user.id
         
         # Add credits to user balance
-        await execute_db_query(
-            "UPDATE users SET credits = credits + $1 WHERE tg_id = $2",
-            credits,
-            user_id
-        )
+        await add_credits(user_id, credits, "test_payment")
         
         logger.info(f"✅ Test payment confirmed: user {user_id} +{credits} credits")
         
