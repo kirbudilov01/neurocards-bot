@@ -75,7 +75,7 @@ def kb_topup():
 
 
 # ========== CABINET ==========
-def kb_cabinet(support_url: str = "https://t.me/your_support"):
+def kb_cabinet(support_url: str = "https://t.me/fabricbothelper"):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💳 Пополнить баланс", callback_data="topup")],
         [InlineKeyboardButton(text="🆘 Служба поддержки", url=support_url)],

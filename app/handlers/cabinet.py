@@ -1,6 +1,6 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-def kb_cabinet(support_url: str = "https://t.me/your_support", ref_code: str | None = None):
+def kb_cabinet(support_url: str = "https://t.me/fabricbothelper", ref_code: str | None = None):
     # ref_code можно пока не использовать — оставим на будущее
     buttons = [
         [InlineKeyboardButton(text="🆘 Поддержка", url=support_url)],
