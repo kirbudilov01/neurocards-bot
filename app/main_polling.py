@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 from app.config import BOT_TOKEN
 from app.config import load_proxies_from_file, PROXY_FILE, PROXY_COOLDOWN
 from app.proxy_rotator import init_proxy_rotator, get_proxy_rotator
-from app.handlers import start, menu_and_flow, fallback
+from app.handlers import start, menu_and_flow, fallback, tools
 from app.db_adapter import init_db_pool, close_db_pool
 
 
@@ -152,6 +152,7 @@ async def main():
     # Регистрация роутеров
     dp.include_router(start.router)
     dp.include_router(menu_and_flow.router)
+    dp.include_router(tools.router)
     dp.include_router(fallback.router)
 
     try:

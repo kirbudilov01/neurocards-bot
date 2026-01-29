@@ -37,6 +37,12 @@ WELCOME_VIDEO_FILE_IDS = [
 PROXY_FILE = os.getenv("PROXY_FILE", "/app/proxies.txt")
 PROXY_COOLDOWN = int(os.getenv("PROXY_COOLDOWN", "300"))  # 5 минут по умолчанию
 
+# Admin IDs (comma-separated) to enable video file_id echo handler
+try:
+    ADMIN_IDS = [int(s) for s in os.getenv("ADMIN_IDS", "").split(",") if s.strip().isdigit()]
+except Exception:
+    ADMIN_IDS = []
+
 def load_proxies_from_file(filepath: str) -> list:
     """Загрузить прокси из файла (один прокси на строку в формате ip:port:user:pass)."""
     try:

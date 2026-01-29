@@ -19,7 +19,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from app.config import BOT_TOKEN, PUBLIC_BASE_URL, WEBHOOK_SECRET_TOKEN
-from app.handlers import start, menu_and_flow, fallback
+from app.handlers import start, menu_and_flow, fallback, tools
 from app.db_adapter import init_db_pool, close_db_pool
 from app import webhooks
 
@@ -178,6 +178,7 @@ async def main():
         # 📦 Роутеры (порядок важен)
         dp.include_router(start.router)
         dp.include_router(menu_and_flow.router)
+        dp.include_router(tools.router)
         dp.include_router(fallback.router)  # ВСЕГДА ПОСЛЕДНИМ
 
         # 🌐 Web app
