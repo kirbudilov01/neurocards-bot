@@ -284,6 +284,7 @@ async def make_reels(cb: CallbackQuery, state: FSMContext):
 
 @router.message(GenFlow.waiting_photo)
 async def on_any_image(message: Message, state: FSMContext):
+    logger.info(f"📸 on_any_image from user={message.from_user.id} state={await state.get_state()}")
     file_id = None
 
     if message.photo:
@@ -301,6 +302,7 @@ async def on_any_image(message: Message, state: FSMContext):
         return
 
     await state.update_data(photo_file_id=file_id)
+    logger.info(f"✅ stored photo_file_id len={len(file_id)}; switching to waiting_product_info")
     await state.set_state(GenFlow.waiting_product_info)
 
     await message.answer(

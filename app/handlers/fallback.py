@@ -1,6 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
 
 from app.keyboards import kb_continue, kb_menu
 from app import texts
@@ -28,7 +29,12 @@ async def start_handler(message: Message):
 
 # ✅ неизвестные callback-и — не молчим
 @router.callback_query()
-async def unknown_callback(cb: CallbackQuery):
+async def unknown_callback(cb: CallbackQuery, state: FSMContext):
+    # Не вмешиваемся, если есть активный FSM-стейт
+    current = await state.get_state()
+    if current:
+        await cb.answer()
+        return
     await cb.answer("Вернул в меню")
     try:
         await cb.message.edit_text(texts.MENU, reply_markup=kb_menu(), parse_mode="HTML")
@@ -38,5 +44,9 @@ async def unknown_callback(cb: CallbackQuery):
 
 # ✅ всё остальное — показываем меню (и фото тоже, если вдруг не поймалось state-хендлерами)
 @router.message()
-async def unknown_message(message: Message):
+async def unknown_message(message: Message, state: FSMContext):
+    # Если у пользователя есть активный стейт — не перехватываем сообщение
+    current = await state.get_state()
+    if current:
+        return
     await message.answer(texts.MENU, reply_markup=kb_menu(), parse_mode="HTML")
