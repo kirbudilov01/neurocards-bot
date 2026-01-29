@@ -6,7 +6,7 @@ from aiohttp import web
 
 from aiogram import Bot, Dispatcher
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-from aiogram.fsm.storage.memory import MemoryStorage  # 🔥 КРИТИЧЕСКИ ВАЖНО
+from aiogram.fsm.storage.redis import RedisStorage
 
 # Настройка логирования
 logging.basicConfig(
@@ -18,7 +18,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from app.config import BOT_TOKEN, PUBLIC_BASE_URL, WEBHOOK_SECRET_TOKEN
+from app.config import BOT_TOKEN, PUBLIC_BASE_URL, WEBHOOK_SECRET_TOKEN, REDIS_URL
 from app.handlers import start, menu_and_flow, fallback, tools
 from app.db_adapter import init_db_pool, close_db_pool
 from app import webhooks
@@ -168,8 +168,8 @@ async def main():
         # 🔑 Создаём бота (прокси только для OpenAI в worker'ах)
         bot = create_bot()
 
-        # ✅ FSM будет РАБОТАТЬ
-        dp = Dispatcher(storage=MemoryStorage())
+        # ✅ FSM будет РАБОТАТЬ и сохраняться в Redis (устойчиво при рестартах)
+        dp = Dispatcher(storage=RedisStorage.from_url(REDIS_URL))
 
         # 📞 Вешаем startup/shutdown обработчики
         dp.startup.register(on_startup)

@@ -10,7 +10,7 @@ import os
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiohttp_socks import ProxyConnector
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.storage.redis import RedisStorage
 from aiohttp import web
 
 # Настройка логирования
@@ -21,7 +21,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from app.config import BOT_TOKEN
+from app.config import BOT_TOKEN, REDIS_URL
 from app.config import load_proxies_from_file, PROXY_FILE, PROXY_COOLDOWN
 from app.proxy_rotator import init_proxy_rotator, get_proxy_rotator
 from app.handlers import start, menu_and_flow, fallback, tools
@@ -147,7 +147,8 @@ async def main():
     port = int(os.getenv("PORT", "8080"))
     asyncio.create_task(start_health_server(port))
     
-    dp = Dispatcher(storage=MemoryStorage())
+    # Persist FSM in Redis to avoid session loss and race issues
+    dp = Dispatcher(storage=RedisStorage.from_url(REDIS_URL))
 
     # Регистрация роутеров
     dp.include_router(start.router)

@@ -1,6 +1,6 @@
 from aiogram import Router
 from aiogram.filters import CommandStart
-from aiogram.types import Message, FSInputFile, LinkPreviewOptions
+from aiogram.types import Message, FSInputFile, LinkPreviewOptions, InputMediaVideo
 import logging
 
 from app import texts
@@ -36,6 +36,7 @@ async def start_handler(message: Message):
             reply_markup=kb_accept_terms(),
             parse_mode="HTML",
             link_preview_options=LinkPreviewOptions(is_disabled=True),
+            disable_web_page_preview=True,
         )
         logger.info("✅ Terms consent message sent successfully")
     except Exception as e:
@@ -51,14 +52,15 @@ async def on_accept_terms(cb: CallbackQuery):
 
     # После принятия условий отправляем демо-видео (поддержка до 10 file_id)
     try:
-        sent = 0
         ids = WELCOME_VIDEO_FILE_IDS or ([WELCOME_VIDEO_FILE_ID] if WELCOME_VIDEO_FILE_ID else [])
         if ids:
-            for vid in ids[:10]:
-                logger.info(f"✅ USING FILE_ID (быстро): {vid[:30]}...")
-                await cb.message.answer_video(video=vid)
-                sent += 1
-            logger.info(f"✅ Sent {sent} demo videos via file_id (instant)")
+            media = [InputMediaVideo(media=vid) for vid in ids[:10]]
+            if len(media) == 1:
+                logger.info(f"✅ USING single FILE_ID (быстро): {ids[0][:30]}...")
+                await cb.message.answer_video(video=ids[0])
+            else:
+                logger.info(f"✅ Sending media group of {len(media)} videos via file_id (instant)")
+                await cb.message.answer_media_group(media)
         else:
             logger.warning(f"⚠️ WELCOME_VIDEO_FILE_ID not set! Loading from disk (slow ~60s): {WELCOME_VIDEO_PATH}")
             logger.warning(f"⚠️ To fix: export WELCOME_VIDEO_FILE_ID='<file_id>' and restart")
