@@ -28,6 +28,10 @@ SUPPORT_URL = os.getenv("SUPPORT_URL", "https://t.me/fabricbothelper")
 # Welcome video file_id (after first upload to Telegram)
 # If empty, will use FSInputFile to upload from disk (slow!)
 WELCOME_VIDEO_FILE_ID = os.getenv("WELCOME_VIDEO_FILE_ID", "")
+# Comma-separated list of video file_ids for fast startup demo
+WELCOME_VIDEO_FILE_IDS = [
+    s.strip() for s in os.getenv("WELCOME_VIDEO_FILE_IDS", "").split(",") if s.strip()
+]
 
 # Proxy Configuration
 PROXY_FILE = os.getenv("PROXY_FILE", "/app/proxies.txt")
