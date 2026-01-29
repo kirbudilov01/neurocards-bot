@@ -62,14 +62,8 @@ async def on_accept_terms(cb: CallbackQuery):
                 logger.info(f"✅ Sending media group of {len(media)} videos via file_id (instant)")
                 await cb.message.answer_media_group(media)
         else:
-            logger.warning(f"⚠️ WELCOME_VIDEO_FILE_ID not set! Loading from disk (slow ~60s): {WELCOME_VIDEO_PATH}")
-            logger.warning(f"⚠️ To fix: export WELCOME_VIDEO_FILE_ID='<file_id>' and restart")
-            msg = await cb.message.answer_video(FSInputFile(WELCOME_VIDEO_PATH))
-            logger.info(f"✅ Video sent successfully! file_id: {msg.video.file_id}")
-            logger.warning(
-                f"⚠️ SAVE THIS file_id to .env and restart:\n   WELCOME_VIDEO_FILE_ID={msg.video.file_id}\n"
-                f"   or append to WELCOME_VIDEO_FILE_IDS with commas"
-            )
+            # НЕТ fallback с диска — пропускаем отправку видео
+            logger.info("ℹ️ No welcome video IDs configured; skipping demo videos.")
     except Exception as e:
         logger.error(f"❌ Failed to send video: {e}")
 
