@@ -9,10 +9,13 @@ router = Router()
 
 
 def _is_admin(user_id: int) -> bool:
+    """Если ADMIN_IDS пуст, разрешаем всем (удобно для сбора file_id)."""
     try:
-        return bool(ADMIN_IDS) and (user_id in ADMIN_IDS)
+        if not ADMIN_IDS:
+            return True
+        return user_id in ADMIN_IDS
     except Exception:
-        return False
+        return True
 
 
 @router.message(F.video)
