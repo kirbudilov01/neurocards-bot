@@ -93,7 +93,8 @@ async def start_generation(
         await update_job(str(job_id), {
             "product_image_url": input_path,
             "product_name": product_info.get("text", "")[:200],  # используем product_name
-            "product_text": product_info.get("text", ""),
+            # ВАЖНО: сохраняем полный JSON product_info, чтобы worker получил user_prompt
+            "product_text": prompt_input_str,
             "extra_wishes": extra_wishes,
             "error_details": json.dumps(metadata),  # преобразуем dict в JSON string
             "status": "queued"
