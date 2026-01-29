@@ -90,8 +90,11 @@ async def cabinet(cb: CallbackQuery):
             "CABINET",
             "👤 <b>Личный кабинет</b>\n\n💳 Баланс: <b>{credits}</b>\n\nВыбери действие:",
         )
+        # Временно добавим отображение tg_user_id для верификации баланса
+        msg = cabinet_tpl.format(credits=bal)
+        msg += f"\n\nID: <code>{cb.from_user.id}</code>"
         await cb.message.answer(
-            cabinet_tpl.format(credits=bal),
+            msg,
             reply_markup=kb_cabinet(),
             parse_mode=PARSE_MODE,
         )
